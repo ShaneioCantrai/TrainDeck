@@ -528,9 +528,11 @@ internal sealed class TswHttpApiProfileCatalog
             var bundledPath = Path.Combine(AppContext.BaseDirectory, "profiles", "tsw-api-profiles.json");
 
             Directory.CreateDirectory(appDataDir);
-            if (!File.Exists(userPath) && File.Exists(bundledPath))
+            if (File.Exists(bundledPath)
+                && (!File.Exists(userPath)
+                    || File.GetLastWriteTimeUtc(bundledPath) > File.GetLastWriteTimeUtc(userPath)))
             {
-                File.Copy(bundledPath, userPath);
+                File.Copy(bundledPath, userPath, overwrite: true);
             }
 
             var profilePath = File.Exists(userPath) ? userPath : bundledPath;
@@ -573,10 +575,18 @@ internal sealed class TswHttpApiProfileCatalog
             return DefaultProfile;
         }
 
-        foreach (var profile in profiles.Where(profile => !profile.Default))
+        var candidateProfiles = profiles.Where(profile => !profile.Default).ToList();
+        foreach (var profile in candidateProfiles)
         {
-            if (profile.MatchActorClasses.Any(match => string.Equals(match, actorClass, StringComparison.OrdinalIgnoreCase))
-                || profile.MatchActorContains.Any(match => actorClass.Contains(match, StringComparison.OrdinalIgnoreCase)))
+            if (profile.MatchActorClasses.Any(match => string.Equals(match, actorClass, StringComparison.OrdinalIgnoreCase)))
+            {
+                return profile;
+            }
+        }
+
+        foreach (var profile in candidateProfiles)
+        {
+            if (profile.MatchActorContains.Any(match => actorClass.Contains(match, StringComparison.OrdinalIgnoreCase)))
             {
                 return profile;
             }

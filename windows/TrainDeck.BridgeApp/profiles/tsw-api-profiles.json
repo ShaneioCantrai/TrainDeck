@@ -143,6 +143,331 @@
           { "controlName": "DynamicBrake_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
         ]
       }
+    },
+    {
+      "id": "br110",
+      "name": "BR 110 DB",
+      "matchActorClasses": [ "RVM_BRO_DB_BR110_399_C" ],
+      "matchActorContains": [ "BR110" ],
+      "axes": {
+        "throttle": [
+          { "controlName": "Throttle_{SIDE}", "sourceMin": 0.5, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
+        ],
+        "train_brake": [
+          { "controlName": "TrainBrake_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.1, "targetMax": 0.8 },
+          { "controlName": "DynamicBrake_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
+        ],
+        "independent_brake": [
+          { "controlName": "LocoBrake_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
+        ]
+      }
+    },
+    {
+      "id": "br112",
+      "name": "BR 112 DB",
+      "matchActorClasses": [ "RVM_HBK_DB_BR112_C" ],
+      "matchActorContains": [ "BR112" ],
+      "axes": {
+        "throttle": [
+          { "controlName": "SpeedSelector_{SIDE}", "sourceMin": 0.5, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
+        ],
+        "train_brake": [
+          { "controlName": "DriversBrake_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.1, "targetMax": 0.75 }
+        ]
+      }
+    },
+    {
+      "id": "br114",
+      "name": "BR 114 DB",
+      "matchActorClasses": [ "RVM_FTF_DB_BR114_C" ],
+      "matchActorContains": [ "BR114" ],
+      "axes": {
+        "throttle": [
+          { "controlName": "SpeedSelector_{SIDE}", "sourceMin": 0.5, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
+        ],
+        "train_brake": [
+          { "controlName": "DriversBrake_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.1, "targetMax": 0.75 }
+        ]
+      }
+    },
+    {
+      "id": "br143_dresden_leipzig",
+      "name": "BR 143 DB - Dresden Leipzig",
+      "matchActorClasses": [ "RVM_DLG_DB_BR143_C" ],
+      "matchActorContains": [ "BR143" ],
+      "axes": {
+        "throttle": [
+          { "controlName": "SpeedSelector_{SIDE}", "sourceMin": 0.5, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
+        ],
+        "train_brake": [
+          { "controlName": "DriversBrake_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.1, "targetMax": 0.75 }
+        ]
+      }
+    },
+    {
+      "id": "br143_nahverkehr_dresden",
+      "name": "BR 143 DB - Nahverkehr Dresden",
+      "matchActorClasses": [ "RVM_DRA_DB_BR143_C" ],
+      "matchActorContains": [ "BR143" ],
+      "axes": {
+        "throttle": [
+          { "controlName": "CruiseControl_{SIDE}", "sourceMin": 0.5, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
+        ],
+        "train_brake": [
+          { "controlName": "DriversBrake_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.1, "targetMax": 0.8 }
+        ]
+      }
+    },
+    {
+      "id": "br146",
+      "name": "BR 146 DB",
+      "matchActorContains": [ "BR146" ],
+      "axes": {
+        "throttle": [
+          { "controlName": "Throttle_{SIDE}", "sourceMin": 0.5, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
+        ],
+        "train_brake": [
+          { "controlName": "TrainBrake_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.1, "targetMax": 0.8 },
+          { "controlName": "DynamicBrake_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.1, "targetMax": 0.8 }
+        ]
+      }
+    },
+    {
+      "id": "br155",
+      "name": "BR 155 DB",
+      "matchActorContains": [ "BR155" ],
+      "axes": {
+        "throttle": [
+          { "controlName": "TapChanger_{SIDE}", "sourceMin": 0.5, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
+        ],
+        "train_brake": [
+          { "controlName": "DriversBrake_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.1, "targetMax": 0.85 }
+        ],
+        "dynamic_brake": [
+          { "controlName": "BrakingForceSelector_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
+        ]
+      }
+    },
+    {
+      "id": "br182_185",
+      "name": "BR 182 / BR 185 DB-MRCE",
+      "matchActorClasses": [ "RVM_MRCE_BR182_C", "RVM_DRA_MRCE_BR185-5_C", "RVM_DLG_DB_BR185_C", "RVM_KWG_DB_BR185_C" ],
+      "matchActorContains": [ "BR182", "BR185" ],
+      "axes": {
+        "throttle": [
+          { "controlName": "Throttle_{SIDE}", "sourceMin": 0.5, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
+        ],
+        "train_brake": [
+          { "controlName": "TrainBrake_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.1, "targetMax": 0.8 },
+          { "controlName": "DynamicBrake_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.1, "targetMax": 0.8 }
+        ]
+      }
+    },
+    {
+      "id": "br193",
+      "name": "BR 193 Vectron",
+      "matchActorClasses": [ "RVM_FTF_DB_Vectron_C", "RVM_FTF_FT_Vectron_C", "RVM_KWG_RP_Vectron_C" ],
+      "matchActorContains": [ "Vectron", "BR193" ],
+      "axes": {
+        "throttle": [
+          { "controlName": "MasterController_{SIDE}", "sourceMin": 0.5, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
+        ],
+        "train_brake": [
+          { "controlName": "TrainBrake_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.1, "targetMax": 0.9 }
+        ]
+      }
+    },
+    {
+      "id": "br363_365",
+      "name": "BR 363 / BR 365 DBB",
+      "matchActorContains": [ "BR363", "BR365" ],
+      "axes": {
+        "throttle": [
+          { "controlName": "Throttle_R", "sourceMin": 0.5, "sourceMax": 1, "targetMin": 0, "targetMax": 0.67 }
+        ],
+        "train_brake": [
+          { "controlName": "DriversBrakeValve_R", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.25, "targetMax": 0.73 }
+        ],
+        "reverser": [
+          { "controlName": "GearSelector", "sourceMin": -1, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
+        ]
+      }
+    },
+    {
+      "id": "br401",
+      "name": "BR 401 DB",
+      "matchActorContains": [ "BR401", "ICE1" ],
+      "axes": {
+        "throttle": [
+          { "controlName": "Throttle_{SIDE}", "sourceMin": 0.5, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
+        ],
+        "train_brake": [
+          { "controlName": "TrainBrake_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.1, "targetMax": 0.8 }
+        ]
+      }
+    },
+    {
+      "id": "br411_403_406",
+      "name": "BR 403 / BR 406 / BR 411 DB",
+      "matchActorContains": [ "BR403", "BR406", "BR411", "ICE3", "ICET" ],
+      "axes": {
+        "throttle": [
+          { "controlName": "Throttle", "sourceMin": 0.5, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
+        ],
+        "train_brake": [
+          { "controlName": "TrainBrake", "sourceMin": 0, "sourceMax": 1, "targetMin": 0, "targetMax": 0.81 }
+        ]
+      }
+    },
+    {
+      "id": "br423_425_430",
+      "name": "BR 423 / BR 425 / BR 430 DB",
+      "matchActorContains": [ "BR423", "BR425", "BR430" ],
+      "axes": {
+        "throttle": [
+          { "controlName": "MasterController", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.1, "targetMax": 1 }
+        ]
+      }
+    },
+    {
+      "id": "br442_1442",
+      "name": "BR 442 Talent 2 DB",
+      "matchActorContains": [ "BR442", "BR1442", "Talent" ],
+      "axes": {
+        "throttle": [
+          { "controlName": "ThrottleAndBrake (Irregular Lever)", "sourceMin": 0, "sourceMax": 1, "targetMin": -1, "targetMax": 1, "sourceNeutral": 0.5, "targetNeutral": 0 }
+        ],
+        "train_brake": [
+          { "controlName": "TrainBrake (Irregular Lever)", "sourceMin": 0, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
+        ]
+      }
+    },
+    {
+      "id": "br628",
+      "name": "BR 628 DB",
+      "matchActorContains": [ "BR628" ],
+      "axes": {
+        "throttle": [
+          { "controlName": "Throttle", "sourceMin": 0.5, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
+        ],
+        "train_brake": [
+          { "controlName": "TrainBrake", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.1, "targetMax": 0.8 }
+        ]
+      }
+    },
+    {
+      "id": "br642",
+      "name": "BR 642 DB",
+      "matchActorContains": [ "BR642" ],
+      "axes": {
+        "throttle": [
+          { "controlName": "ThrottleAndBrakeHandle", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.1, "targetMax": 1 }
+        ],
+        "train_brake": [
+          { "controlName": "TrainBrakeHandle", "sourceMin": 0, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
+        ]
+      }
+    },
+    {
+      "id": "obb1116",
+      "name": "OBB 1116 Taurus",
+      "matchActorContains": [ "OBB1116", "1116", "Taurus" ],
+      "axes": {
+        "throttle": [
+          { "controlName": "Throttle_{SIDE}", "sourceMin": 0.5, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
+        ],
+        "train_brake": [
+          { "controlName": "TrainBrake_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.1, "targetMax": 0.8 },
+          { "controlName": "DynamicBrake_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.1, "targetMax": 0.8 }
+        ]
+      }
+    },
+    {
+      "id": "db766",
+      "name": "766.2 DBpbzfa DB",
+      "matchActorContains": [ "DBpbzfa", "DB766", "766" ],
+      "axes": {
+        "throttle": [
+          { "controlName": "Throttle", "sourceMin": 0.5, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
+        ],
+        "train_brake": [
+          { "controlName": "TrainBrake", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.1, "targetMax": 0.8 },
+          { "controlName": "DynamicBrake", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.1, "targetMax": 0.8 }
+        ],
+        "independent_brake": [
+          { "controlName": "DirectBrake", "sourceMin": 0, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
+        ]
+      }
+    },
+    {
+      "id": "acela",
+      "name": "Amtrak Acela",
+      "matchActorClasses": [ "RVM_BPE_AMTK_Acela_PowerCar_A_C" ],
+      "matchActorContains": [ "Acela" ],
+      "axes": {
+        "throttle": [
+          { "controlName": "ThrottleLever", "sourceMin": 0.5, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
+        ],
+        "train_brake": [
+          { "controlName": "AutomaticBrakeLever", "sourceMin": 0, "sourceMax": 1, "targetMin": 0, "targetMax": 0.75 }
+        ]
+      }
+    },
+    {
+      "id": "bilevel_rotem_car",
+      "name": "Rotem Cab Car",
+      "matchActorClasses": [ "RVM_ALV_ML_RotemCars_CabCar_C" ],
+      "matchActorContains": [ "Rotem" ],
+      "axes": {
+        "reverser": [
+          { "controlName": "Reverser", "sourceMin": -1, "sourceMax": 1, "targetMin": -1, "targetMax": 1 }
+        ],
+        "throttle": [
+          { "controlName": "MasterController", "sourceMin": 0.5, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
+        ],
+        "train_brake": [
+          { "controlName": "AutomaticBrake", "sourceMin": 0, "sourceMax": 1, "targetMin": 0, "targetMax": 0.549 }
+        ]
+      }
+    },
+    {
+      "id": "bnsf_sd40",
+      "name": "BNSF SD40-2",
+      "matchActorClasses": [ "RVM_CJP_BNSF_SD40-2_C" ],
+      "matchActorContains": [ "SD40" ],
+      "axes": {
+        "throttle": [
+          { "controlName": "Throttle", "sourceMin": 0.5, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
+        ],
+        "train_brake": [
+          { "controlName": "AutomaticBrake", "sourceMin": 0, "sourceMax": 1, "targetMin": 0, "targetMax": 0.7 }
+        ],
+        "independent_brake": [
+          { "controlName": "IndependentBrake", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.25, "targetMax": 1 }
+        ]
+      }
+    },
+    {
+      "id": "m7",
+      "name": "M7 LIRR / MNR",
+      "matchActorClasses": [ "RVM_LIRR_M7-A_C", "RVM_NYH_MNR_M7a-A_C" ],
+      "matchActorContains": [ "M7-A", "M7a" ],
+      "axes": {
+        "throttle": [
+          { "controlName": "MasterController", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.1, "targetMax": 1 }
+        ]
+      }
+    },
+    {
+      "id": "m9",
+      "name": "M9 LIRR",
+      "matchActorClasses": [ "RVM_LIRREX_M9-A_C" ],
+      "matchActorContains": [ "M9-A" ],
+      "axes": {
+        "throttle": [
+          { "controlName": "MasterController", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.1, "targetMax": 1 }
+        ]
+      }
     }
   ]
 }
