@@ -23,7 +23,9 @@ internal sealed class MainForm : Form
     private readonly Button probeApiButton = new();
     private readonly Button snapshotCabButton = new();
     private readonly Button openProfileButton = new();
+    private readonly Button toggleLogButton = new();
     private readonly TextBox logBox = new();
+    private bool logVisible;
     private readonly string logPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "TrainDeck",
@@ -33,8 +35,8 @@ internal sealed class MainForm : Form
     {
         Text = "TrainDeck Bridge";
         StartPosition = FormStartPosition.CenterScreen;
-        MinimumSize = new Size(820, 560);
-        Size = new Size(980, 680);
+        MinimumSize = new Size(760, 520);
+        Size = new Size(1100, 680);
         BackColor = Color.FromArgb(16, 20, 24);
         ForeColor = Color.FromArgb(232, 236, 239);
         Font = new Font("Segoe UI", 10F);
@@ -65,14 +67,14 @@ internal sealed class MainForm : Form
         var root = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(18),
+            Padding = new Padding(16),
             ColumnCount = 1,
             RowCount = 3,
             BackColor = BackColor
         };
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
         Controls.Add(root);
 
         var title = new Label
@@ -85,20 +87,26 @@ internal sealed class MainForm : Form
             Margin = new Padding(0, 0, 0, 4)
         };
         root.Controls.Add(title);
+        root.SetRow(title, 0);
 
-        var topPanel = new TableLayoutPanel
+        var topPanel = new SplitContainer
         {
-            Dock = DockStyle.Top,
-            ColumnCount = 2,
-            AutoSize = true,
-            Padding = new Padding(0, 8, 0, 14)
+            Dock = DockStyle.Fill,
+            Orientation = Orientation.Vertical,
+            FixedPanel = FixedPanel.None,
+            SplitterWidth = 10,
+            Margin = new Padding(0, 8, 0, 12),
+            BackColor = BackColor
         };
-        topPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        topPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         root.Controls.Add(topPanel);
+        root.SetRow(topPanel, 1);
 
         var statusPanel = MakePanel();
-        topPanel.Controls.Add(statusPanel, 0, 0);
+        statusPanel.Resize += (_, _) =>
+        {
+            apiLabel.MaximumSize = new Size(Math.Max(260, statusPanel.ClientSize.Width - statusPanel.Padding.Horizontal - 8), 0);
+        };
+        topPanel.Panel1.Controls.Add(statusPanel);
 
         statusLabel.Text = "Starting";
         statusLabel.Font = new Font("Segoe UI Semibold", 15F);
@@ -118,21 +126,49 @@ internal sealed class MainForm : Form
 
         apiLabel.Text = "TSW API: checking";
         apiLabel.AutoSize = true;
+        apiLabel.MaximumSize = new Size(560, 0);
         apiLabel.Margin = new Padding(0, 4, 0, 0);
         apiLabel.ForeColor = Color.FromArgb(218, 198, 103);
         statusPanel.Controls.Add(apiLabel);
 
-        var controlPanel = MakePanel();
-        topPanel.Controls.Add(controlPanel, 1, 0);
+        var controlPanel = new Panel
+        {
+            Dock = DockStyle.Fill,
+            AutoScroll = true,
+            Padding = new Padding(16),
+            Margin = new Padding(0, 0, 12, 0),
+            BackColor = Color.FromArgb(27, 32, 37)
+        };
+        controlPanel.AutoScroll = true;
+        topPanel.Panel2.Controls.Add(controlPanel);
+
+        void ApplyResponsiveLayout()
+        {
+            var narrow = ClientSize.Width < 980;
+            topPanel.Orientation = narrow ? Orientation.Horizontal : Orientation.Vertical;
+            topPanel.SplitterDistance = narrow
+                ? Math.Min(Math.Max(136, statusPanel.PreferredSize.Height + 12), Math.Max(136, topPanel.Height - 214))
+                : Math.Max(320, topPanel.Width / 2);
+
+            root.RowStyles[2].Height = logVisible ? (narrow ? 96 : 120) : 0;
+            controlPanel.Padding = new Padding(narrow ? 12 : 16);
+            statusPanel.Padding = new Padding(narrow ? 12 : 16);
+            root.PerformLayout();
+        }
+
+        topPanel.Resize += (_, _) => ApplyResponsiveLayout();
+        Resize += (_, _) => ApplyResponsiveLayout();
+        Shown += (_, _) => ApplyResponsiveLayout();
 
         var row = new FlowLayoutPanel
         {
             FlowDirection = FlowDirection.LeftToRight,
-            AutoSize = true,
+            AutoSize = false,
             WrapContents = true,
-            Dock = DockStyle.Top
+            Dock = DockStyle.Top,
+            Height = 78
         };
-        controlPanel.Controls.Add(row);
+        row.Resize += (_, _) => row.Height = Math.Max(76, row.PreferredSize.Height + 6);
 
         row.Controls.Add(new Label
         {
@@ -194,12 +230,13 @@ internal sealed class MainForm : Form
         var buttonRow = new FlowLayoutPanel
         {
             FlowDirection = FlowDirection.LeftToRight,
-            AutoSize = true,
+            AutoSize = false,
             WrapContents = true,
             Dock = DockStyle.Top,
+            Height = 90,
             Margin = new Padding(0, 12, 0, 0)
         };
-        controlPanel.Controls.Add(buttonRow);
+        buttonRow.Resize += (_, _) => buttonRow.Height = Math.Max(84, buttonRow.PreferredSize.Height + 6);
 
         launchTabletButton.Text = "Launch Tablet App";
         launchTabletButton.Width = 150;
@@ -290,8 +327,25 @@ internal sealed class MainForm : Form
         openProfileButton.Click += (_, _) => OpenProfile();
         buttonRow.Controls.Add(openProfileButton);
 
+        toggleLogButton.Text = "Show Log";
+        toggleLogButton.Width = 110;
+        toggleLogButton.Height = 34;
+        toggleLogButton.Click += (_, _) =>
+        {
+            logVisible = !logVisible;
+            logBox.Visible = logVisible;
+            toggleLogButton.Text = logVisible ? "Hide Log" : "Show Log";
+            ApplyResponsiveLayout();
+        };
+        buttonRow.Controls.Add(toggleLogButton);
+
+        controlPanel.Controls.Add(buttonRow);
+        controlPanel.Controls.Add(row);
+
         logBox.Dock = DockStyle.Fill;
+        logBox.MinimumSize = new Size(0, 44);
         logBox.Multiline = true;
+        logBox.Visible = false;
         logBox.ScrollBars = ScrollBars.Vertical;
         logBox.ReadOnly = true;
         logBox.BackColor = Color.FromArgb(10, 13, 16);
@@ -299,6 +353,7 @@ internal sealed class MainForm : Form
         logBox.BorderStyle = BorderStyle.FixedSingle;
         logBox.Font = new Font("Cascadia Mono", 10F);
         root.Controls.Add(logBox);
+        root.SetRow(logBox, 2);
 
         AppendLog("Ready. Open TrainDeck on the tablet, or use Launch Tablet App if ADB is connected.");
         AppendLog($"Keyboard profile: {profile.Path}");
