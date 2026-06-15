@@ -12,6 +12,7 @@ internal sealed class BridgeService : IDisposable
     private readonly TswAxisMapper axisMapper;
     private readonly TswHttpApiClient tswApi;
     private bool lastAutoTargetActive;
+    private bool deckNeutralizedSinceApiLost;
     private CancellationTokenSource? cts;
     private UdpClient? udp;
 
@@ -20,7 +21,7 @@ internal sealed class BridgeService : IDisposable
         this.profile = profile;
         axisMapper = new TswAxisMapper(message => LogInfo(message));
         tswApi = new TswHttpApiClient(message => LogInfo(message));
-        tswApi.StatusChanged += (_, e) => ApiStatusChanged?.Invoke(this, e);
+        tswApi.StatusChanged += OnApiStatusChanged;
     }
 
     public event EventHandler<BridgeLogEventArgs>? Log;
@@ -135,6 +136,11 @@ internal sealed class BridgeService : IDisposable
         {
             case "hello":
                 LogInfo($"Tablet connected: {message.Device ?? remote.Address.ToString()} at {remote.Address}.");
+                if (!tswApi.IsReady)
+                {
+                    deckNeutralizedSinceApiLost = true;
+                    _ = SendDeckCommandAsync("reset_axes", tswApi.StatusText);
+                }
                 break;
             case "button":
                 HandleButton(message);
@@ -295,6 +301,58 @@ internal sealed class BridgeService : IDisposable
     {
         Stop();
         tswApi.Dispose();
+    }
+
+    private void OnApiStatusChanged(object? sender, TswHttpApiStatusEventArgs e)
+    {
+        ApiStatusChanged?.Invoke(this, e);
+
+        if (e.Ready)
+        {
+            deckNeutralizedSinceApiLost = false;
+            return;
+        }
+
+        if (LastRemote is null)
+        {
+            axisMapper.Reset();
+            return;
+        }
+
+        if (deckNeutralizedSinceApiLost)
+        {
+            return;
+        }
+
+        deckNeutralizedSinceApiLost = true;
+        axisMapper.Reset();
+        _ = SendDeckCommandAsync("reset_axes", e.Status);
+    }
+
+    private async Task SendDeckCommandAsync(string type, string reason)
+    {
+        if (udp is null || LastRemote is null)
+        {
+            return;
+        }
+
+        var payload = new TrainDeckBridgeMessage
+        {
+            Type = type,
+            Reason = reason,
+            At = Environment.TickCount64
+        };
+
+        try
+        {
+            var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload, JsonOptions.Default));
+            await udp.SendAsync(body, body.Length, LastRemote);
+            LogInfo($"tablet command {type} -> {LastRemote.Address} ({reason})");
+        }
+        catch (Exception ex)
+        {
+            LogWarn($"tablet command {type} failed: {ex.Message}");
+        }
     }
 }
 

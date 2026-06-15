@@ -33,6 +33,24 @@ internal sealed class TrainDeckMessage
     public double? Value { get; set; }
 }
 
+internal sealed class TrainDeckBridgeMessage
+{
+    [JsonPropertyName("app")]
+    public string App { get; set; } = "TrainDeck";
+
+    [JsonPropertyName("version")]
+    public int Version { get; set; } = 1;
+
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = "";
+
+    [JsonPropertyName("reason")]
+    public string Reason { get; set; } = "";
+
+    [JsonPropertyName("at")]
+    public long At { get; set; }
+}
+
 internal static class JsonOptions
 {
     public static readonly JsonSerializerOptions Default = new()
@@ -47,4 +65,3 @@ internal static class JsonOptions
         WriteIndented = true
     };
 }
-

@@ -41,6 +41,7 @@ public class MainActivity extends Activity implements TrainDeckView.Callback {
         port = prefs.getInt(PREF_PORT, DEFAULT_PORT);
         profile = DeckProfile.load(prefs);
         udp = new UdpDeckClient(host, port);
+        udp.setListener(this::handleBridgeMessage);
 
         deckView = new TrainDeckView(this);
         deckView.setCallback(this);
@@ -190,6 +191,18 @@ public class MainActivity extends Activity implements TrainDeckView.Callback {
             payload.put("device", android.os.Build.MODEL);
             udp.send(payload);
         } catch (Exception ignored) {
+        }
+    }
+
+    private void handleBridgeMessage(JSONObject message) {
+        if (!"TrainDeck".equalsIgnoreCase(message.optString("app"))) {
+            return;
+        }
+
+        String type = message.optString("type");
+        if ("reset_axes".equalsIgnoreCase(type)) {
+            String reason = message.optString("reason");
+            runOnUiThread(() -> deckView.resetAxesFromBridge(reason));
         }
     }
 

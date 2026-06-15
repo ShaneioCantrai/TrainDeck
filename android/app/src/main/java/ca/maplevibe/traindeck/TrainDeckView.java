@@ -83,6 +83,18 @@ public final class TrainDeckView extends View {
         invalidate();
     }
 
+    public void resetAxesFromBridge(String reason) {
+        activeAxis = -1;
+        activeButton = -1;
+        afbEnabled = false;
+        clearLongPress();
+        clearEmergencyHold();
+        for (AxisControl axis : axes) {
+            axis.value = axis.initialValue;
+        }
+        invalidate();
+    }
+
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
@@ -623,6 +635,7 @@ public final class TrainDeckView extends View {
         final int color;
         final float weight;
         final int notches;
+        final float initialValue;
         final RectF rect = new RectF();
         float value;
 
@@ -635,6 +648,7 @@ public final class TrainDeckView extends View {
             this.color = color;
             this.weight = weight;
             this.notches = notches;
+            this.initialValue = value;
         }
     }
 }

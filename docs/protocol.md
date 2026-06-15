@@ -49,3 +49,22 @@ Axis `value` is normalized:
 - `0.0` to `1.0` for ordinary levers.
 - `-1.0` to `1.0` for reverser-style controls.
 
+## Bridge Commands
+
+The Windows bridge may send UTF-8 JSON datagrams back to the tablet source port
+seen in the latest tablet packet.
+
+### Reset Axes
+
+```json
+{
+  "app": "TrainDeck",
+  "version": 1,
+  "type": "reset_axes",
+  "reason": "not connected: Response status code does not indicate success: 403.",
+  "at": 17823499123
+}
+```
+
+The tablet resets local lever positions to their safe defaults. For the combined
+throttle, the safe default is the neutral `N` line.

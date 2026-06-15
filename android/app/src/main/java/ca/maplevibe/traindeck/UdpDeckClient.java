@@ -10,19 +10,31 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public final class UdpDeckClient implements AutoCloseable {
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    public interface Listener {
+        void onMessage(JSONObject message);
+    }
+
+    private final ExecutorService sendExecutor = Executors.newSingleThreadExecutor();
+    private final ExecutorService receiveExecutor = Executors.newSingleThreadExecutor();
     private DatagramSocket socket;
     private String host;
     private int port;
+    private volatile boolean closed;
+    private volatile Listener listener;
 
     public UdpDeckClient(String host, int port) {
         this.host = host;
         this.port = port;
         try {
             socket = new DatagramSocket();
+            startReceiver();
         } catch (Exception ignored) {
             socket = null;
         }
+    }
+
+    public void setListener(Listener listener) {
+        this.listener = listener;
     }
 
     public void setTarget(String host, int port) {
@@ -35,7 +47,7 @@ public final class UdpDeckClient implements AutoCloseable {
             return;
         }
 
-        executor.execute(() -> {
+        sendExecutor.execute(() -> {
             try {
                 byte[] body = payload.toString().getBytes(StandardCharsets.UTF_8);
                 InetAddress address = InetAddress.getByName(host.trim());
@@ -47,12 +59,35 @@ public final class UdpDeckClient implements AutoCloseable {
         });
     }
 
+    private void startReceiver() {
+        receiveExecutor.execute(() -> {
+            byte[] buffer = new byte[4096];
+            while (!closed && socket != null && !socket.isClosed()) {
+                try {
+                    DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
+                    socket.receive(packet);
+                    String text = new String(packet.getData(), packet.getOffset(), packet.getLength(), StandardCharsets.UTF_8);
+                    JSONObject message = new JSONObject(text);
+                    Listener current = listener;
+                    if (current != null) {
+                        current.onMessage(message);
+                    }
+                } catch (Exception ignored) {
+                    if (closed) {
+                        return;
+                    }
+                }
+            }
+        });
+    }
+
     @Override
     public void close() {
-        executor.shutdownNow();
+        closed = true;
+        sendExecutor.shutdownNow();
+        receiveExecutor.shutdownNow();
         if (socket != null) {
             socket.close();
         }
     }
 }
-
