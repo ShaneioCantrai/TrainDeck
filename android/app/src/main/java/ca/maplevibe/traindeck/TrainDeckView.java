@@ -15,6 +15,7 @@ import java.util.Locale;
 
 public final class TrainDeckView extends View {
     private static final float THROTTLE_NEUTRAL = 0.5f;
+    private static final float THROTTLE_NEUTRAL_SNAP_RADIUS = 0.04f;
     private static final float EMERGENCY_GATE_VALUE = 0.08f;
     private static final float EMERGENCY_VALUE = 0f;
     private static final long EMERGENCY_HOLD_MS = 2300L;
@@ -61,6 +62,7 @@ public final class TrainDeckView extends View {
     private long emergencyHoldStartedAt = 0L;
     private float emergencyRequestedValue = EMERGENCY_VALUE;
     private boolean emergencyUnlocked = false;
+    private boolean throttleNeutralDetentActive = false;
     private boolean afbEnabled = false;
     private float lastAfbValue = 80f / AFB_MAX_SPEED_KMH;
 
@@ -174,6 +176,7 @@ public final class TrainDeckView extends View {
             case MotionEvent.ACTION_CANCEL:
                 clearLongPress();
                 clearEmergencyHold();
+                throttleNeutralDetentActive = false;
                 if (activeButton >= 0 && profile != null && activeButton < profile.activeButtons().size()) {
                     DeckProfile.ButtonDef def = profile.activeButtons().get(activeButton);
                     if (callback != null) {
@@ -406,8 +409,7 @@ public final class TrainDeckView extends View {
     }
 
     private String throttleReadout(float value) {
-        float deadband = 0.015f;
-        if (Math.abs(value - THROTTLE_NEUTRAL) <= deadband) {
+        if (Math.abs(value - THROTTLE_NEUTRAL) <= THROTTLE_NEUTRAL_SNAP_RADIUS) {
             return "N";
         }
         if (value > THROTTLE_NEUTRAL) {
@@ -537,7 +539,7 @@ public final class TrainDeckView extends View {
         }
         float value = axis.min + (axis.max - axis.min) * norm;
         if ("throttle".equals(axis.control)) {
-            value = applyEmergencyGate(axis, value);
+            value = applyThrottleNeutralDetent(applyEmergencyGate(axis, value));
         } else if ("afb".equals(axis.control)) {
             value = snapAfbValue(value);
             afbEnabled = value > 0.01f;
@@ -550,6 +552,19 @@ public final class TrainDeckView extends View {
             callback.onAxisChanged(axis.control, axis.value);
         }
         invalidate();
+    }
+
+    private float applyThrottleNeutralDetent(float value) {
+        if (Math.abs(value - THROTTLE_NEUTRAL) <= THROTTLE_NEUTRAL_SNAP_RADIUS) {
+            if (!throttleNeutralDetentActive) {
+                throttleNeutralDetentActive = true;
+                performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+            }
+            return THROTTLE_NEUTRAL;
+        }
+
+        throttleNeutralDetentActive = false;
+        return value;
     }
 
     private void toggleAfb() {
