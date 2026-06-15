@@ -94,6 +94,12 @@ public class MainActivity extends Activity implements TrainDeckView.Callback {
     }
 
     @Override
+    public void onDeckPageSelected(int page) {
+        profile.activePage = page;
+        profile.save(prefs);
+    }
+
+    @Override
     public void onSettingsRequested() {
         showTargetEditor();
     }

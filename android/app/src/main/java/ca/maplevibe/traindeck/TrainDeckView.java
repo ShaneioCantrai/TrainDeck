@@ -30,12 +30,15 @@ public final class TrainDeckView extends View {
 
         void onEditButton(int index, DeckProfile.ButtonDef button);
 
+        void onDeckPageSelected(int page);
+
         void onSettingsRequested();
     }
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF settingsRect = new RectF();
     private final RectF afbToggleRect = new RectF();
+    private final RectF[] pageRects = new RectF[3];
     private final RectF[] buttonRects = new RectF[24];
     private final AxisControl[] axes = new AxisControl[]{
             new AxisControl("reverser", "Rev", -1f, 1f, 0f, Color.rgb(73, 160, 120), 0.55f, 3),
@@ -63,6 +66,9 @@ public final class TrainDeckView extends View {
     public TrainDeckView(Context context) {
         super(context);
         setFocusable(true);
+        for (int i = 0; i < pageRects.length; i++) {
+            pageRects[i] = new RectF();
+        }
         for (int i = 0; i < buttonRects.length; i++) {
             buttonRects[i] = new RectF();
         }
@@ -125,6 +131,17 @@ public final class TrainDeckView extends View {
                     return true;
                 }
 
+                int page = hitPage(x, y);
+                if (page >= 0 && profile != null && profile.setActivePage(page)) {
+                    activeButton = -1;
+                    clearLongPress();
+                    if (callback != null) {
+                        callback.onDeckPageSelected(page);
+                    }
+                    invalidate();
+                    return true;
+                }
+
                 int axis = hitAxis(x, y);
                 if (axis >= 0) {
                     activeAxis = axis;
@@ -133,9 +150,9 @@ public final class TrainDeckView extends View {
                 }
 
                 int button = hitButton(x, y);
-                if (button >= 0 && profile != null && button < profile.buttons.size()) {
+                if (button >= 0 && profile != null && button < profile.activeButtons().size()) {
                     activeButton = button;
-                    DeckProfile.ButtonDef def = profile.buttons.get(button);
+                    DeckProfile.ButtonDef def = profile.activeButtons().get(button);
                     if (callback != null) {
                         callback.onButtonDown(button, def);
                     }
@@ -156,8 +173,8 @@ public final class TrainDeckView extends View {
             case MotionEvent.ACTION_CANCEL:
                 clearLongPress();
                 clearEmergencyHold();
-                if (activeButton >= 0 && profile != null && activeButton < profile.buttons.size()) {
-                    DeckProfile.ButtonDef def = profile.buttons.get(activeButton);
+                if (activeButton >= 0 && profile != null && activeButton < profile.activeButtons().size()) {
+                    DeckProfile.ButtonDef def = profile.activeButtons().get(activeButton);
                     if (callback != null) {
                         callback.onButtonUp(activeButton, def);
                     }
@@ -229,6 +246,48 @@ public final class TrainDeckView extends View {
         paint.setFakeBoldText(true);
         canvas.drawText(afbEnabled ? "ON" : "OFF", afbToggleRect.left + dp(11), afbToggleRect.top + dp(34), paint);
         paint.setFakeBoldText(false);
+
+        drawPageTabs(canvas, w);
+    }
+
+    private void drawPageTabs(Canvas canvas, float w) {
+        if (profile == null) {
+            return;
+        }
+
+        float left = dp(304);
+        float right = settingsRect.left - dp(14);
+        if (right <= left + dp(150)) {
+            return;
+        }
+
+        float gap = dp(7);
+        int count = Math.min(pageRects.length, profile.pageCount());
+        float tabW = (right - left - gap * (count - 1)) / count;
+        for (int i = 0; i < count; i++) {
+            RectF r = pageRects[i];
+            r.set(left + i * (tabW + gap), dp(9), left + i * (tabW + gap) + tabW, dp(49));
+            boolean active = i == profile.activePage;
+            paint.setColor(active ? Color.rgb(73, 160, 120) : Color.rgb(27, 32, 37));
+            canvas.drawRoundRect(r, dp(6), dp(6), paint);
+
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(dp(1));
+            paint.setColor(active ? Color.WHITE : Color.rgb(73, 160, 120));
+            canvas.drawRoundRect(r, dp(6), dp(6), paint);
+            paint.setStyle(Paint.Style.FILL);
+
+            paint.setColor(active ? Color.rgb(6, 22, 17) : Color.rgb(218, 226, 233));
+            paint.setTextAlign(Paint.Align.CENTER);
+            paint.setTextSize(dp(15));
+            paint.setFakeBoldText(true);
+            canvas.drawText(fitText(profile.pages.get(i).label, r.width() - dp(12), dp(15)), r.centerX(), r.centerY() + dp(5), paint);
+            paint.setFakeBoldText(false);
+        }
+        for (int i = count; i < pageRects.length; i++) {
+            pageRects[i].setEmpty();
+        }
+        paint.setTextAlign(Paint.Align.LEFT);
     }
 
     private void drawAxes(Canvas canvas, float w, float h) {
@@ -388,7 +447,7 @@ public final class TrainDeckView extends View {
             RectF r = buttonRects[i];
             r.set(margin + col * (bw + gap), top + row * (bh + gap),
                     margin + col * (bw + gap) + bw, top + row * (bh + gap) + bh);
-            DeckProfile.ButtonDef def = profile.buttons.get(i);
+            DeckProfile.ButtonDef def = profile.activeButtons().get(i);
             drawButton(canvas, r, def.label, i == activeButton);
         }
     }
@@ -442,6 +501,15 @@ public final class TrainDeckView extends View {
     private int hitButton(float x, float y) {
         for (int i = 0; i < buttonRects.length; i++) {
             if (buttonRects[i].contains(x, y)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private int hitPage(float x, float y) {
+        for (int i = 0; i < pageRects.length; i++) {
+            if (!pageRects[i].isEmpty() && pageRects[i].contains(x, y)) {
                 return i;
             }
         }

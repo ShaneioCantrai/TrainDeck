@@ -182,6 +182,12 @@ internal sealed class BridgeService : IDisposable
             return;
         }
 
+        if (IsUnassignedKey(binding!.Key))
+        {
+            LogInfo($"send   {binding.Key,-18} skipped; command is not assigned in the keyboard profile.");
+            return;
+        }
+
         var focused = EnsureKeyboardTargetForButton();
         if (!focused)
         {
@@ -273,6 +279,13 @@ internal sealed class BridgeService : IDisposable
     private void LogInfo(string message) => Log?.Invoke(this, new BridgeLogEventArgs("INFO", message));
     private void LogWarn(string message) => Log?.Invoke(this, new BridgeLogEventArgs("WARN", message));
     private void LogError(string message) => Log?.Invoke(this, new BridgeLogEventArgs("ERROR", message));
+
+    private static bool IsUnassignedKey(string key)
+    {
+        return string.IsNullOrWhiteSpace(key)
+            || string.Equals(key, "Unassigned", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(key, "None", StringComparison.OrdinalIgnoreCase);
+    }
 
     private bool ShouldSendKeyboard()
     {
