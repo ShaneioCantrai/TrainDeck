@@ -145,11 +145,17 @@ internal sealed class MainForm : Form
 
         void ApplyResponsiveLayout()
         {
+            if (WindowState == FormWindowState.Minimized || topPanel.Width <= 0 || topPanel.Height <= 0)
+            {
+                return;
+            }
+
             var narrow = ClientSize.Width < 980;
             topPanel.Orientation = narrow ? Orientation.Horizontal : Orientation.Vertical;
-            topPanel.SplitterDistance = narrow
+            var requestedSplitterDistance = narrow
                 ? Math.Min(Math.Max(136, statusPanel.PreferredSize.Height + 12), Math.Max(136, topPanel.Height - 214))
                 : Math.Max(320, topPanel.Width / 2);
+            SetSafeSplitterDistance(topPanel, requestedSplitterDistance);
 
             root.RowStyles[2].Height = logVisible ? (narrow ? 96 : 120) : 0;
             controlPanel.Padding = new Padding(narrow ? 12 : 16);
@@ -490,6 +496,22 @@ internal sealed class MainForm : Form
             BackColor = Color.FromArgb(27, 32, 37),
             WrapContents = false
         };
+    }
+
+    private static void SetSafeSplitterDistance(SplitContainer splitContainer, int requestedDistance)
+    {
+        var available = splitContainer.Orientation == Orientation.Vertical
+            ? splitContainer.Width
+            : splitContainer.Height;
+        var maxDistance = available - splitContainer.Panel2MinSize - splitContainer.SplitterWidth;
+        var minDistance = splitContainer.Panel1MinSize;
+
+        if (maxDistance < minDistance)
+        {
+            return;
+        }
+
+        splitContainer.SplitterDistance = Math.Clamp(requestedDistance, minDistance, maxDistance);
     }
 
     private static string GetLanAddress()
