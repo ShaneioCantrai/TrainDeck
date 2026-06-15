@@ -7,12 +7,14 @@ namespace TrainDeck.BridgeApp;
 
 internal sealed class BridgeService : IDisposable
 {
+    private static readonly TimeSpan DeckNeutralizeDelay = TimeSpan.FromSeconds(12);
     private readonly KeyboardProfile profile;
     private readonly Dictionary<string, AxisLog> axisLogState = new(StringComparer.OrdinalIgnoreCase);
     private readonly TswAxisMapper axisMapper;
     private readonly TswHttpApiClient tswApi;
     private bool lastAutoTargetActive;
     private bool deckNeutralizedSinceApiLost;
+    private CancellationTokenSource? pendingDeckNeutralizeCts;
     private CancellationTokenSource? cts;
     private UdpClient? udp;
 
@@ -78,6 +80,7 @@ internal sealed class BridgeService : IDisposable
         udp = null;
         cts?.Dispose();
         cts = null;
+        CancelDeckNeutralize();
         tswApi.Stop();
         LogInfo("Bridge stopped.");
         StatusChanged?.Invoke(this, new BridgeStatusEventArgs(false, Port, LastRemote));
@@ -138,8 +141,7 @@ internal sealed class BridgeService : IDisposable
                 LogInfo($"Tablet connected: {message.Device ?? remote.Address.ToString()} at {remote.Address}.");
                 if (!tswApi.IsReady)
                 {
-                    deckNeutralizedSinceApiLost = true;
-                    _ = SendDeckCommandAsync("reset_axes", tswApi.StatusText);
+                    ScheduleDeckNeutralize(tswApi.StatusText);
                 }
                 break;
             case "button":
@@ -310,6 +312,7 @@ internal sealed class BridgeService : IDisposable
         if (e.Ready)
         {
             deckNeutralizedSinceApiLost = false;
+            CancelDeckNeutralize();
             return;
         }
 
@@ -324,9 +327,52 @@ internal sealed class BridgeService : IDisposable
             return;
         }
 
-        deckNeutralizedSinceApiLost = true;
-        axisMapper.Reset();
-        _ = SendDeckCommandAsync("reset_axes", e.Status);
+        ScheduleDeckNeutralize(e.Status);
+    }
+
+    private void ScheduleDeckNeutralize(string reason)
+    {
+        if (LastRemote is null || deckNeutralizedSinceApiLost)
+        {
+            return;
+        }
+
+        CancelDeckNeutralize();
+        pendingDeckNeutralizeCts = new CancellationTokenSource();
+        var token = pendingDeckNeutralizeCts.Token;
+        _ = Task.Run(() => NeutralizeDeckAfterDelayAsync(reason, token), token);
+    }
+
+    private async Task NeutralizeDeckAfterDelayAsync(string reason, CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(DeckNeutralizeDelay, token);
+            while (!token.IsCancellationRequested && !tswApi.IsReady)
+            {
+                var tswRunning = ForegroundAppDetector.IsTrainSimWorldRunning();
+                if (!tswRunning || ForegroundAppDetector.IsTrainSimWorldForeground())
+                {
+                    deckNeutralizedSinceApiLost = true;
+                    axisMapper.Reset();
+                    await SendDeckCommandAsync("reset_axes", reason);
+                    return;
+                }
+
+                LogInfo($"tablet reset held; TSW is backgrounded. foreground={ForegroundAppDetector.DescribeForeground()}");
+                await Task.Delay(TimeSpan.FromSeconds(3), token);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private void CancelDeckNeutralize()
+    {
+        pendingDeckNeutralizeCts?.Cancel();
+        pendingDeckNeutralizeCts?.Dispose();
+        pendingDeckNeutralizeCts = null;
     }
 
     private async Task SendDeckCommandAsync(string type, string reason)

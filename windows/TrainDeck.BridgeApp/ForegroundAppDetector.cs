@@ -79,6 +79,18 @@ internal static class ForegroundAppDetector
         }
     }
 
+    public static bool IsTrainSimWorldRunning()
+    {
+        try
+        {
+            return Process.GetProcessesByName("TrainSimWorld").Length > 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public static string DescribeForeground()
     {
         var hwnd = GetForegroundWindow();
