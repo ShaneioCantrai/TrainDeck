@@ -256,9 +256,15 @@ internal sealed class TswHttpApiClient : IDisposable
         }
         catch (Exception ex)
         {
-            UpdateStatus(false, ex.Message.Contains("actively refused", StringComparison.OrdinalIgnoreCase)
-                ? "TSW not running with -HTTPAPI"
-                : $"not connected: {ex.Message}");
+            if (ex.Message.Contains("actively refused", StringComparison.OrdinalIgnoreCase))
+            {
+                UpdateStatus(false, TswSteamLauncher.IsTrainSimWorldRunning()
+                    ? "TSW is running without API mode. Close TSW and launch it from TrainDeck."
+                    : "TSW not running with -HTTPAPI");
+                return;
+            }
+
+            UpdateStatus(false, $"not connected: {ex.Message}");
         }
     }
 

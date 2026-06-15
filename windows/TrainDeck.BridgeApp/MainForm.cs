@@ -54,6 +54,7 @@ internal sealed class MainForm : Form
     {
         base.OnShown(e);
         await StartBridgeAsync();
+        EnsureTswApiLaunchOption();
     }
 
     protected override void OnFormClosed(FormClosedEventArgs e)
@@ -255,8 +256,8 @@ internal sealed class MainForm : Form
         };
         buttonRow.Controls.Add(launchTabletButton);
 
-        launchTswApiButton.Text = "Launch TSW API";
-        launchTswApiButton.Width = 135;
+        launchTswApiButton.Text = "Launch TSW";
+        launchTswApiButton.Width = 125;
         launchTswApiButton.Height = 34;
         launchTswApiButton.Click += (_, _) =>
         {
@@ -271,8 +272,8 @@ internal sealed class MainForm : Form
         };
         buttonRow.Controls.Add(launchTswApiButton);
 
-        setTswApiOptionButton.Text = "Set API Launch Opt";
-        setTswApiOptionButton.Width = 150;
+        setTswApiOptionButton.Text = "Enable TSW API";
+        setTswApiOptionButton.Width = 145;
         setTswApiOptionButton.Height = 34;
         setTswApiOptionButton.Click += (_, _) =>
         {
@@ -419,6 +420,7 @@ internal sealed class MainForm : Form
         apiLabel.ForeColor = e.Ready
             ? Color.FromArgb(73, 160, 120)
             : Color.FromArgb(218, 198, 103);
+        launchTswApiButton.Text = e.Ready ? "Launch TSW" : "Launch TSW API";
     }
 
     private void AppendLog(string message)
@@ -454,6 +456,25 @@ internal sealed class MainForm : Form
             FileName = profile.Path,
             UseShellExecute = true
         });
+    }
+
+    private void EnsureTswApiLaunchOption()
+    {
+        try
+        {
+            var status = TswSteamLauncher.GetLaunchOptionStatus();
+            if (status.Enabled)
+            {
+                AppendLog(status.Message);
+                return;
+            }
+
+            AppendLog(TswSteamLauncher.EnsureHttpApiLaunchOption());
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"Could not verify TSW API launch option: {ex.Message}");
+        }
     }
 
     private static FlowLayoutPanel MakePanel()

@@ -10,13 +10,21 @@ internal static class TswSteamLauncher
 
     public static string LaunchWithHttpApi()
     {
+        var optionStatus = GetLaunchOptionStatus();
+        var prefix = optionStatus.Enabled
+            ? "TSW6 Steam launch option already includes -HTTPAPI."
+            : EnsureHttpApiLaunchOption();
+        var running = IsTrainSimWorldRunning();
+
         Process.Start(new ProcessStartInfo
         {
             FileName = "steam://run/3656800//-HTTPAPI/",
             UseShellExecute = true
         });
 
-        return "Launch requested through Steam with -HTTPAPI. If TSW was already running, close it fully and press this again.";
+        return running
+            ? $"{prefix} TSW is already running, so Steam may not apply API mode to this session. Close TSW fully, then press Launch TSW again."
+            : $"{prefix} Launch requested through Steam with -HTTPAPI.";
     }
 
     public static string EnsureHttpApiLaunchOption()
@@ -38,7 +46,7 @@ internal static class TswSteamLauncher
         var block = text[start..end];
         if (Regex.IsMatch(block, "\"LaunchOptions\"\\s+\"[^\"]*-HTTPAPI[^\"]*\"", RegexOptions.IgnoreCase))
         {
-            return $"TSW6 Steam launch option already includes {HttpApiLaunchOption}. Restart TSW if it is already running.";
+            return $"TSW6 Steam launch option already includes {HttpApiLaunchOption}.";
         }
 
         var updatedBlock = Regex.IsMatch(block, "\"LaunchOptions\"\\s+\"([^\"]*)\"")
@@ -46,7 +54,7 @@ internal static class TswSteamLauncher
             {
                 var existing = match.Groups[1].Value.Trim();
                 var value = string.IsNullOrWhiteSpace(existing) ? HttpApiLaunchOption : $"{existing} {HttpApiLaunchOption}";
-                return $"\"LaunchOptions\"\t\t\"{value}\"";
+                return $"{GetLaunchOptionsIndent(match.Value)}\"LaunchOptions\"\t\t\"{value}\"";
             }, RegexOptions.None, TimeSpan.FromSeconds(1))
             : InsertLaunchOption(block);
 
@@ -56,8 +64,37 @@ internal static class TswSteamLauncher
 
         var steamRunning = Process.GetProcessesByName("steam").Length > 0;
         return steamRunning
-            ? $"Wrote {HttpApiLaunchOption} to TSW6 Steam launch options and backed up {Path.GetFileName(backup)}. Because Steam is running, restart TSW; if Steam overwrites it, exit Steam once and press this again."
+            ? $"Wrote {HttpApiLaunchOption} to TSW6 Steam launch options and backed up {Path.GetFileName(backup)}. If TSW is already running, restart it once."
             : $"Wrote {HttpApiLaunchOption} to TSW6 Steam launch options and backed up {Path.GetFileName(backup)}.";
+    }
+
+    public static TswLaunchOptionStatus GetLaunchOptionStatus()
+    {
+        var localConfig = FindSteamLocalConfig();
+        if (localConfig is null)
+        {
+            return new TswLaunchOptionStatus(false, false, "Could not find Steam localconfig.vdf.");
+        }
+
+        var text = File.ReadAllText(localConfig);
+        var appBlock = FindAppBlock(text);
+        if (appBlock is null)
+        {
+            return new TswLaunchOptionStatus(true, false, $"Could not find TSW6 app {Tsw6AppId} in Steam local config.");
+        }
+
+        var (start, end) = appBlock.Value;
+        var block = text[start..end];
+        var enabled = Regex.IsMatch(block, "\"LaunchOptions\"\\s+\"[^\"]*-HTTPAPI[^\"]*\"", RegexOptions.IgnoreCase);
+        return new TswLaunchOptionStatus(true, enabled, enabled
+            ? "TSW API launch option is enabled."
+            : "TSW API launch option is not enabled.");
+    }
+
+    public static bool IsTrainSimWorldRunning()
+    {
+        return Process.GetProcessesByName("TrainSimWorld").Length > 0
+            || Process.GetProcessesByName("TrainSimWorld-Win64-Shipping").Length > 0;
     }
 
     private static string? FindSteamLocalConfig()
@@ -140,4 +177,12 @@ internal static class TswSteamLauncher
         var inserted = $"\t\t\t\t\t\t\"LaunchOptions\"\t\t\"{HttpApiLaunchOption}\"{lineEnding}";
         return block.Insert(closeIndex, inserted);
     }
+
+    private static string GetLaunchOptionsIndent(string launchOptionsLine)
+    {
+        var index = launchOptionsLine.IndexOf('"');
+        return index <= 0 ? "" : launchOptionsLine[..index];
+    }
 }
+
+internal sealed record TswLaunchOptionStatus(bool SteamConfigFound, bool Enabled, string Message);
