@@ -18,6 +18,7 @@ public final class TrainDeckView extends View {
     private static final float EMERGENCY_GATE_VALUE = 0.08f;
     private static final float EMERGENCY_VALUE = 0f;
     private static final long EMERGENCY_HOLD_MS = 2300L;
+    private static final long BUTTON_EDIT_HOLD_MS = 3000L;
     private static final float AFB_MAX_SPEED_KMH = 300f;
     private static final float AFB_STEP_KMH = 10f;
 
@@ -666,7 +667,7 @@ public final class TrainDeckView extends View {
                 callback.onEditButton(button, def);
             }
         };
-        postDelayed(longPressRunnable, 650);
+        postDelayed(longPressRunnable, BUTTON_EDIT_HOLD_MS);
     }
 
     private void clearLongPress() {
