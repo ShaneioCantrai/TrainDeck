@@ -1,21 +1,27 @@
-MIT License
+Proprietary License
 
-Copyright (c) 2026 Maple Vibe Inc.
+Copyright (c) 2026 Maple Vibe Inc. All rights reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+TrainDeck, including its source code, binaries, assets, documentation, profiles,
+and related materials, is proprietary software owned by Maple Vibe Inc.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+No permission is granted to copy, modify, publish, distribute, sublicense, sell,
+host, or create derivative works from this software or any substantial portion
+of it unless Maple Vibe Inc. gives prior written permission.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+End users may install and run official TrainDeck releases provided by Maple Vibe
+Inc. for personal use with Train Sim World, subject to any release notes,
+distribution terms, or store terms that accompany those releases.
+
+Issue reports, feature requests, profile notes, screenshots, and other feedback
+submitted to this repository may be used by Maple Vibe Inc. to improve TrainDeck
+without obligation or compensation. Code contributions, pull requests, patches,
+profile files, or other copyrightable contributions are not accepted unless
+Maple Vibe Inc. has explicitly requested them and a separate written contribution
+agreement is in place.
+
+THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL MAPLE VIBE INC.
+OR ITS DEVELOPERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING
+FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OF THIS SOFTWARE.

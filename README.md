@@ -99,4 +99,8 @@ Tablet button labels and command IDs are stored in Android app preferences. Long
 
 ## License
 
-MIT. See `LICENSE`.
+Proprietary. Copyright (c) 2026 Maple Vibe Inc. All rights reserved.
+
+The source code is published for visibility and project coordination only. See
+`LICENSE` and `CONTRIBUTING.md` before copying, redistributing, modifying, or
+submitting code.
