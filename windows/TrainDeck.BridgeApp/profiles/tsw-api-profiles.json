@@ -332,6 +332,9 @@
       "name": "BR 403 / BR 406 / BR 411 DB",
       "matchActorContains": [ "BR403", "BR406", "BR411", "ICE3", "ICET" ],
       "axes": {
+        "reverser": [
+          { "controlName": "Reverser", "sourceMin": -1, "sourceMax": 1, "targetMin": -1, "targetMax": 1 }
+        ],
         "throttle": [
           { "controlName": "Throttle", "sourceMin": 0.5, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
         ],
@@ -343,6 +346,11 @@
         ]
       },
       "buttons": {
+        "horn": {
+          "steps": [
+            { "controlName": "Horn", "value": 1, "releaseValue": 0.5, "holdMs": 250, "delayAfterMs": 40 }
+          ]
+        },
         "afb_on": {
           "steps": [
             { "controlName": "S1_09", "holdMs": 90, "delayAfterMs": 120 },

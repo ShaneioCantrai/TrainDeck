@@ -169,12 +169,18 @@ internal sealed class BridgeService : IDisposable
             return;
         }
 
-        if (!ShouldSendKeyboard() || !mapped)
+        if (!mapped)
         {
             return;
         }
 
-        var focused = ForegroundAppDetector.FocusTrainSimWorld();
+        var focused = EnsureKeyboardTargetForButton();
+        if (!focused)
+        {
+            LogWarn($"send   {binding!.Key,-18} skipped; Train Sim World could not be focused. foreground={ForegroundAppDetector.DescribeForeground()}");
+            return;
+        }
+
         if (string.Equals(state, "down", StringComparison.OrdinalIgnoreCase))
         {
             KeyboardOutput.KeyDown(binding!.Key);
@@ -185,6 +191,37 @@ internal sealed class BridgeService : IDisposable
         }
 
         LogInfo($"send   {binding!.Key,-18} focusTsw={focused} foreground={ForegroundAppDetector.DescribeForeground()} {KeyboardOutput.LastSummary}");
+    }
+
+    private bool EnsureKeyboardTargetForButton()
+    {
+        if (KeyboardEnabled)
+        {
+            return ForegroundAppDetector.IsTrainSimWorldForeground()
+                || ForegroundAppDetector.FocusTrainSimWorld();
+        }
+
+        if (!AutoArmTrainSimWorld)
+        {
+            return false;
+        }
+
+        var active = ForegroundAppDetector.IsTrainSimWorldForeground();
+        if (!active)
+        {
+            active = ForegroundAppDetector.FocusTrainSimWorld();
+        }
+
+        if (active != lastAutoTargetActive)
+        {
+            lastAutoTargetActive = active;
+            axisMapper.Reset();
+            LogInfo(active
+                ? "Auto-armed: Train Sim World is foreground. Next lever packet syncs without sending keys."
+                : "Auto-disarmed: Train Sim World is not foreground.");
+        }
+
+        return active;
     }
 
     private void HandleAxis(TrainDeckMessage message)

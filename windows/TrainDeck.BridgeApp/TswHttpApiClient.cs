@@ -126,13 +126,14 @@ internal sealed class TswHttpApiClient : IDisposable
                     $"/set/CurrentDrivableActor/{Uri.EscapeDataString(step.ControlName)}.InputValue?Value={step.Value.ToString("0.000000", CultureInfo.InvariantCulture)}",
                     CancellationToken.None);
 
-                if (step.HoldMs > 0)
-                {
-                    await Task.Delay(step.HoldMs);
-                    await PatchAsync(
-                        $"/set/CurrentDrivableActor/{Uri.EscapeDataString(step.ControlName)}.InputValue?Value=0.000000",
-                        CancellationToken.None);
-                }
+                    if (step.HoldMs > 0)
+                    {
+                        await Task.Delay(step.HoldMs);
+                        var releaseValue = step.ReleaseValue ?? 0;
+                        await PatchAsync(
+                            $"/set/CurrentDrivableActor/{Uri.EscapeDataString(step.ControlName)}.InputValue?Value={releaseValue.ToString("0.000000", CultureInfo.InvariantCulture)}",
+                            CancellationToken.None);
+                    }
 
                 if (step.DelayAfterMs > 0)
                 {
@@ -542,6 +543,7 @@ internal sealed class TswHttpApiAxisMapper
             .Select(step => new TswHttpApiButtonStepCommand(
                 ResolveControlName(step.ControlName),
                 step.Value,
+                step.ReleaseValue,
                 step.HoldMs,
                 step.DelayBeforeMs,
                 step.DelayAfterMs))
@@ -733,6 +735,7 @@ internal sealed class TswHttpApiButtonStep
 {
     public string ControlName { get; set; } = "";
     public double Value { get; set; } = 1;
+    public double? ReleaseValue { get; set; }
     public int HoldMs { get; set; } = 90;
     public int DelayBeforeMs { get; set; }
     public int DelayAfterMs { get; set; } = 100;
@@ -743,7 +746,7 @@ internal sealed record TswHttpApiAxisCommand(string SourceControl, IReadOnlyList
 {
     public string DisplayControls => string.Join(", ", Outputs.Select(output => output.ControlName));
 }
-internal sealed record TswHttpApiButtonStepCommand(string ControlName, double Value, int HoldMs, int DelayBeforeMs, int DelayAfterMs);
+internal sealed record TswHttpApiButtonStepCommand(string ControlName, double Value, double? ReleaseValue, int HoldMs, int DelayBeforeMs, int DelayAfterMs);
 internal sealed record TswHttpApiButtonCommand(string SourceCommand, IReadOnlyList<TswHttpApiButtonStepCommand> Steps);
 internal sealed record TswHttpApiStatusEventArgs(bool Ready, string Status);
 internal sealed record TswCabControlSnapshot(string Name, double InputValue, double? NormalizedValue, string Identifier);

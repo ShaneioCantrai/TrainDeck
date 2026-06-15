@@ -48,9 +48,30 @@ internal static class ForegroundAppDetector
                 return false;
             }
 
-            ShowWindow(target.MainWindowHandle, ShowRestore);
-            ShowWindow(target.MainWindowHandle, ShowNormal);
-            return SetForegroundWindow(target.MainWindowHandle);
+            var targetWindow = target.MainWindowHandle;
+            var foregroundWindow = GetForegroundWindow();
+            var foregroundThread = foregroundWindow == IntPtr.Zero
+                ? 0
+                : GetWindowThreadProcessId(foregroundWindow, out _);
+            var targetThread = GetWindowThreadProcessId(targetWindow, out _);
+            var attached = false;
+            if (foregroundThread != 0 && targetThread != 0 && foregroundThread != targetThread)
+            {
+                attached = AttachThreadInput(foregroundThread, targetThread, true);
+            }
+
+            ShowWindow(targetWindow, ShowRestore);
+            ShowWindow(targetWindow, ShowNormal);
+            BringWindowToTop(targetWindow);
+            SetActiveWindow(targetWindow);
+            var focused = SetForegroundWindow(targetWindow);
+
+            if (attached)
+            {
+                AttachThreadInput(foregroundThread, targetThread, false);
+            }
+
+            return focused || IsTrainSimWorldForeground();
         }
         catch
         {
@@ -96,5 +117,14 @@ internal static class ForegroundAppDetector
     private static extern bool SetForegroundWindow(IntPtr hWnd);
 
     [DllImport("user32.dll")]
+    private static extern bool BringWindowToTop(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr SetActiveWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
     private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    [DllImport("user32.dll")]
+    private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool attach);
 }
