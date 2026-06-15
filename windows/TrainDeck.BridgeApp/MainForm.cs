@@ -259,15 +259,20 @@ internal sealed class MainForm : Form
         launchTswApiButton.Text = "Launch TSW";
         launchTswApiButton.Width = 125;
         launchTswApiButton.Height = 34;
-        launchTswApiButton.Click += (_, _) =>
+        launchTswApiButton.Click += async (_, _) =>
         {
+            launchTswApiButton.Enabled = false;
             try
             {
-                AppendLog(TswSteamLauncher.LaunchWithHttpApi());
+                AppendLog(await TswSteamLauncher.LaunchWithHttpApiAsync());
             }
             catch (Exception ex)
             {
                 AppendLog($"Could not launch TSW API mode: {ex.Message}");
+            }
+            finally
+            {
+                launchTswApiButton.Enabled = true;
             }
         };
         buttonRow.Controls.Add(launchTswApiButton);
@@ -463,13 +468,9 @@ internal sealed class MainForm : Form
         try
         {
             var status = TswSteamLauncher.GetLaunchOptionStatus();
-            if (status.Enabled)
-            {
-                AppendLog(status.Message);
-                return;
-            }
-
-            AppendLog(TswSteamLauncher.EnsureHttpApiLaunchOption());
+            AppendLog(status.Enabled
+                ? status.Message
+                : $"{status.Message} Launch TSW passes -HTTPAPI directly for this session.");
         }
         catch (Exception ex)
         {

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Microsoft.Win32;
 using System.Text.RegularExpressions;
 
 namespace TrainDeck.BridgeApp;
@@ -7,24 +8,50 @@ internal static class TswSteamLauncher
 {
     private const string Tsw6AppId = "3656800";
     private const string HttpApiLaunchOption = "-HTTPAPI";
+    private const string LaunchOptionsPattern = "(?m)^(?<indent>\\s*)\"LaunchOptions\"\\s+\"(?<value>[^\"]*)\"\\s*$";
 
-    public static string LaunchWithHttpApi()
+    public static async Task<string> LaunchWithHttpApiAsync()
     {
         var optionStatus = GetLaunchOptionStatus();
         var prefix = optionStatus.Enabled
             ? "TSW6 Steam launch option already includes -HTTPAPI."
-            : EnsureHttpApiLaunchOption();
+            : "Passing -HTTPAPI directly for this launch.";
         var running = IsTrainSimWorldRunning();
+        if (running)
+        {
+            return $"{prefix} TSW is already running, so Steam may not apply API mode to this session. Close TSW fully, then press Launch TSW again.";
+        }
+
+        var steamExe = FindSteamExe();
+        if (steamExe is not null)
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = steamExe,
+                Arguments = $"-applaunch {Tsw6AppId} {HttpApiLaunchOption}",
+                UseShellExecute = false
+            });
+
+            if (await WaitForTrainSimWorldAsync(TimeSpan.FromSeconds(12)))
+            {
+                return $"{prefix} Launch requested through steam.exe.";
+            }
+        }
 
         Process.Start(new ProcessStartInfo
         {
-            FileName = "steam://run/3656800//-HTTPAPI/",
+            FileName = $"steam://rungameid/{Tsw6AppId}",
             UseShellExecute = true
         });
 
-        return running
-            ? $"{prefix} TSW is already running, so Steam may not apply API mode to this session. Close TSW fully, then press Launch TSW again."
-            : $"{prefix} Launch requested through Steam with -HTTPAPI.";
+        if (await WaitForTrainSimWorldAsync(TimeSpan.FromSeconds(12)))
+        {
+            return steamExe is null
+                ? $"{prefix} Launch requested through the Steam URL handler."
+                : $"{prefix} steam.exe did not start TSW, but the Steam URL fallback did.";
+        }
+
+        return $"{prefix} Launch was requested, but no TrainSimWorld process appeared within 24 seconds. Try launching TSW from Steam once; TrainDeck will attach when the API is ready.";
     }
 
     public static string EnsureHttpApiLaunchOption()
@@ -44,19 +71,23 @@ internal static class TswSteamLauncher
 
         var (start, end) = appBlock.Value;
         var block = text[start..end];
-        if (Regex.IsMatch(block, "\"LaunchOptions\"\\s+\"[^\"]*-HTTPAPI[^\"]*\"", RegexOptions.IgnoreCase))
+        var launchOptionsMatch = Regex.Match(block, LaunchOptionsPattern, RegexOptions.IgnoreCase, TimeSpan.FromSeconds(1));
+        var updatedBlock = launchOptionsMatch.Success
+            ? Regex.Replace(block, LaunchOptionsPattern, match =>
+            {
+                var existing = match.Groups["value"].Value.Trim();
+                var value = ContainsHttpApiOption(existing)
+                    ? existing
+                    : string.IsNullOrWhiteSpace(existing) ? HttpApiLaunchOption : $"{existing} {HttpApiLaunchOption}";
+                return $"{GetPropertyIndent(block)}\"LaunchOptions\"\t\t\"{value}\"";
+            }, RegexOptions.IgnoreCase, TimeSpan.FromSeconds(1))
+            : InsertLaunchOption(block);
+        updatedBlock = NormalizeClosingBraceIndent(updatedBlock);
+
+        if (updatedBlock == block)
         {
             return $"TSW6 Steam launch option already includes {HttpApiLaunchOption}.";
         }
-
-        var updatedBlock = Regex.IsMatch(block, "\"LaunchOptions\"\\s+\"([^\"]*)\"")
-            ? Regex.Replace(block, "\"LaunchOptions\"\\s+\"([^\"]*)\"", match =>
-            {
-                var existing = match.Groups[1].Value.Trim();
-                var value = string.IsNullOrWhiteSpace(existing) ? HttpApiLaunchOption : $"{existing} {HttpApiLaunchOption}";
-                return $"{GetLaunchOptionsIndent(match.Value)}\"LaunchOptions\"\t\t\"{value}\"";
-            }, RegexOptions.None, TimeSpan.FromSeconds(1))
-            : InsertLaunchOption(block);
 
         var backup = $"{localConfig}.traindeck-{DateTime.Now:yyyyMMdd-HHmmss}.bak";
         File.Copy(localConfig, backup, overwrite: false);
@@ -64,7 +95,7 @@ internal static class TswSteamLauncher
 
         var steamRunning = Process.GetProcessesByName("steam").Length > 0;
         return steamRunning
-            ? $"Wrote {HttpApiLaunchOption} to TSW6 Steam launch options and backed up {Path.GetFileName(backup)}. If TSW is already running, restart it once."
+            ? $"Wrote {HttpApiLaunchOption} to TSW6 Steam launch options and backed up {Path.GetFileName(backup)}. Steam is running and may overwrite this; fully exit Steam first if the setting does not stick."
             : $"Wrote {HttpApiLaunchOption} to TSW6 Steam launch options and backed up {Path.GetFileName(backup)}.";
     }
 
@@ -97,6 +128,22 @@ internal static class TswSteamLauncher
             || Process.GetProcessesByName("TrainSimWorld-Win64-Shipping").Length > 0;
     }
 
+    private static async Task<bool> WaitForTrainSimWorldAsync(TimeSpan timeout)
+    {
+        var deadline = DateTimeOffset.UtcNow + timeout;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            if (IsTrainSimWorldRunning())
+            {
+                return true;
+            }
+
+            await Task.Delay(500);
+        }
+
+        return false;
+    }
+
     private static string? FindSteamLocalConfig()
     {
         var steamRoot = Path.Combine(
@@ -111,6 +158,44 @@ internal static class TswSteamLauncher
         return Directory.EnumerateFiles(steamRoot, "localconfig.vdf", SearchOption.AllDirectories)
             .OrderByDescending(File.GetLastWriteTimeUtc)
             .FirstOrDefault(path => File.ReadAllText(path).Contains($"\"{Tsw6AppId}\"", StringComparison.Ordinal));
+    }
+
+    private static string? FindSteamExe()
+    {
+        var standardPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+            "Steam",
+            "steam.exe");
+        if (File.Exists(standardPath))
+        {
+            return standardPath;
+        }
+
+        foreach (var registryPath in new[]
+        {
+            @"HKEY_CURRENT_USER\Software\Valve\Steam",
+            @"HKEY_LOCAL_MACHINE\Software\Valve\Steam",
+            @"HKEY_LOCAL_MACHINE\Software\WOW6432Node\Valve\Steam"
+        })
+        {
+            var steamExe = Registry.GetValue(registryPath, "SteamExe", null) as string;
+            if (!string.IsNullOrWhiteSpace(steamExe) && File.Exists(steamExe))
+            {
+                return steamExe;
+            }
+
+            var installPath = Registry.GetValue(registryPath, "InstallPath", null) as string;
+            if (!string.IsNullOrWhiteSpace(installPath))
+            {
+                var candidate = Path.Combine(installPath, "steam.exe");
+                if (File.Exists(candidate))
+                {
+                    return candidate;
+                }
+            }
+        }
+
+        return null;
     }
 
     private static (int Start, int End)? FindAppBlock(string text)
@@ -132,7 +217,9 @@ internal static class TswSteamLauncher
 
             var block = text[appMatch.Index..(closeBrace + 1)];
             if (block.Contains("\"LastPlayed\"", StringComparison.Ordinal)
-                || block.Contains($"\"{Tsw6AppId}_eula_", StringComparison.Ordinal))
+                && (block.Contains($"\"{Tsw6AppId}_eula_", StringComparison.Ordinal)
+                    || block.Contains("\"Playtime\"", StringComparison.Ordinal)
+                    || block.Contains("\"BadgeData\"", StringComparison.Ordinal)))
             {
                 return (appMatch.Index, closeBrace + 1);
             }
@@ -174,14 +261,63 @@ internal static class TswSteamLauncher
         }
 
         var lineEnding = block.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
-        var inserted = $"\t\t\t\t\t\t\"LaunchOptions\"\t\t\"{HttpApiLaunchOption}\"{lineEnding}";
-        return block.Insert(closeIndex, inserted);
+        var closeLineStart = block.LastIndexOf('\n', closeIndex);
+        closeLineStart = closeLineStart < 0 ? closeIndex : closeLineStart + 1;
+        if (closeLineStart < closeIndex && block[closeLineStart] == '\r')
+        {
+            closeLineStart++;
+        }
+
+        var inserted = $"{GetPropertyIndent(block)}\"LaunchOptions\"\t\t\"{HttpApiLaunchOption}\"{lineEnding}";
+        return block.Insert(closeLineStart, inserted);
     }
 
-    private static string GetLaunchOptionsIndent(string launchOptionsLine)
+    private static string GetPropertyIndent(string block)
     {
-        var index = launchOptionsLine.IndexOf('"');
-        return index <= 0 ? "" : launchOptionsLine[..index];
+        foreach (var propertyName in new[] { "LastPlayed", "Playtime", "BadgeData" })
+        {
+            var match = Regex.Match(block, $"(?m)^(\\s*)\"{propertyName}\"\\s+\"", RegexOptions.None, TimeSpan.FromSeconds(1));
+            if (match.Success)
+            {
+                return match.Groups[1].Value;
+            }
+        }
+
+        var appKeyIndent = GetAppKeyIndent(block);
+        return $"{appKeyIndent}\t";
+    }
+
+    private static string GetAppKeyIndent(string block)
+    {
+        var match = Regex.Match(block, $"(?m)^(\\s*)\"{Tsw6AppId}\"\\s*$", RegexOptions.None, TimeSpan.FromSeconds(1));
+        return match.Success ? match.Groups[1].Value : "";
+    }
+
+    private static string NormalizeClosingBraceIndent(string block)
+    {
+        var closeIndex = block.LastIndexOf('}');
+        if (closeIndex < 0)
+        {
+            return block;
+        }
+
+        var lineStart = block.LastIndexOf('\n', closeIndex);
+        lineStart = lineStart < 0 ? 0 : lineStart + 1;
+        if (lineStart < closeIndex && block[lineStart] == '\r')
+        {
+            lineStart++;
+        }
+
+        var expected = GetAppKeyIndent(block);
+        var actual = block[lineStart..closeIndex];
+        return actual == expected ? block : string.Concat(block.AsSpan(0, lineStart), expected, block.AsSpan(closeIndex));
+    }
+
+    private static bool ContainsHttpApiOption(string launchOptions)
+    {
+        return launchOptions
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Any(option => string.Equals(option, HttpApiLaunchOption, StringComparison.OrdinalIgnoreCase));
     }
 }
 
