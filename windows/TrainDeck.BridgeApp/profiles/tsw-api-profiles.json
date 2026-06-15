@@ -70,6 +70,40 @@
       }
     },
     {
+      "id": "class150_2",
+      "name": "Class 150/2 DMU",
+      "matchActorClasses": [ "RVM_TFW_Class150_DMSL_C" ],
+      "matchActorContains": [ "Class150", "Class_150", "Class 150" ],
+      "axes": {
+        "reverser": [
+          { "controlName": "Reverser_IrregularLever", "sourceMin": -1, "sourceMax": 1, "targetMin": 0.25, "targetMax": 0.75, "sourceNeutral": 0, "targetNeutral": 0.5 }
+        ],
+        "throttle": [
+          { "controlName": "Throttle_IrregularLever", "sourceMin": 0.5, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
+        ],
+        "train_brake": [
+          { "controlName": "TrainBrake_IrregularLever", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.75, "targetMax": 0 }
+        ]
+      },
+      "buttons": {
+        "horn": {
+          "steps": [
+            { "controlName": "WarningHorn", "value": 1, "releaseValue": 0.5, "holdMs": 250, "delayAfterMs": 40 }
+          ]
+        },
+        "aws_reset": {
+          "steps": [
+            { "controlName": "AWS_Reset_PushButton", "value": 1, "releaseValue": 0, "holdMs": 120, "delayAfterMs": 40 }
+          ]
+        },
+        "alerter": {
+          "steps": [
+            { "controlName": "AWS_Reset_PushButton", "value": 1, "releaseValue": 0, "holdMs": 120, "delayAfterMs": 40 }
+          ]
+        }
+      }
+    },
+    {
       "id": "alp45dp",
       "name": "ALP-45DP NJT",
       "matchActorClasses": [ "RVM_MRT_NJT_ALP45DP_C" ],
