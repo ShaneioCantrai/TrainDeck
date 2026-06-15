@@ -16,7 +16,7 @@ internal sealed class TswHttpApiClient : IDisposable
         Timeout = TimeSpan.FromMilliseconds(900)
     };
     private readonly Action<string> log;
-    private readonly TswHttpApiAxisMapper axisMapper = new();
+    private readonly TswHttpApiAxisMapper axisMapper;
     private readonly Dictionary<string, DateTimeOffset> interactingControls = new(StringComparer.OrdinalIgnoreCase);
     private readonly object statusSync = new();
     private CancellationTokenSource? cts;
@@ -26,6 +26,7 @@ internal sealed class TswHttpApiClient : IDisposable
     public TswHttpApiClient(Action<string> log)
     {
         this.log = log;
+        axisMapper = new TswHttpApiAxisMapper(log);
     }
 
     public event EventHandler<TswHttpApiStatusEventArgs>? StatusChanged;
@@ -80,10 +81,13 @@ internal sealed class TswHttpApiClient : IDisposable
 
         try
         {
-            await EnsureInteractingAsync(command.ControlName, CancellationToken.None);
-            await PatchAsync(
-                $"/set/CurrentDrivableActor/{Uri.EscapeDataString(command.ControlName)}.InputValue?Value={command.Value.ToString("0.000000", CultureInfo.InvariantCulture)}",
-                CancellationToken.None);
+            foreach (var output in command.Outputs)
+            {
+                await EnsureInteractingAsync(output.ControlName, CancellationToken.None);
+                await PatchAsync(
+                    $"/set/CurrentDrivableActor/{Uri.EscapeDataString(output.ControlName)}.InputValue?Value={output.Value.ToString("0.000000", CultureInfo.InvariantCulture)}",
+                    CancellationToken.None);
+            }
         }
         catch (Exception ex)
         {
@@ -188,7 +192,11 @@ internal sealed class TswHttpApiClient : IDisposable
                 actor = objectClass.GetString() ?? "";
             }
 
-            UpdateStatus(true, string.IsNullOrWhiteSpace(actor) ? "connected" : $"connected: {actor}");
+            var cab = await TryGetActiveCabAsync(token);
+            axisMapper.SetContext(actor, cab);
+            var profile = axisMapper.CurrentProfileName;
+            var actorText = string.IsNullOrWhiteSpace(actor) ? "connected" : $"connected: {actor}";
+            UpdateStatus(true, $"{actorText} | profile: {profile}");
         }
         catch (HttpRequestException ex) when (ex.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
         {
@@ -401,71 +409,232 @@ internal sealed class TswHttpApiClient : IDisposable
 
 internal sealed class TswHttpApiAxisMapper
 {
-    private readonly Dictionary<string, TswHttpApiAxisBinding> bindings = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["reverser"] = new("Reverser", -1, 1, -1, 1),
-        ["throttle"] = new("MasterController", 0, 1, -0.9, 1, 0.5, 0),
-        ["dynamic_brake"] = new("DynamicBrake", 0, 1, 0, 1),
-        ["train_brake"] = new("TrainBrake (Irregular Lever)", 0, 1, 0, 0.8),
-        ["independent_brake"] = new("IndependentBrake", 0, 1, 0, 1)
-    };
-
+    private readonly TswHttpApiProfileCatalog catalog;
     private readonly Dictionary<string, double> lastValues = new(StringComparer.OrdinalIgnoreCase);
+    private TswHttpApiProfile currentProfile;
+    private string activeSide = "F";
+
+    public TswHttpApiAxisMapper(Action<string> log)
+    {
+        catalog = TswHttpApiProfileCatalog.Load(log);
+        currentProfile = catalog.DefaultProfile;
+    }
+
+    public string CurrentProfileName => currentProfile.Name;
+
+    public void SetContext(string actorClass, string activeCab)
+    {
+        var nextProfile = catalog.Match(actorClass);
+        var nextSide = string.Equals(activeCab, "back", StringComparison.OrdinalIgnoreCase) ? "B" : "F";
+
+        if (!string.Equals(nextProfile.Id, currentProfile.Id, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(nextSide, activeSide, StringComparison.OrdinalIgnoreCase))
+        {
+            currentProfile = nextProfile;
+            activeSide = nextSide;
+            lastValues.Clear();
+        }
+    }
 
     public bool IsMapped(string control)
     {
-        return bindings.ContainsKey(control);
+        return currentProfile.Axes.ContainsKey(control);
     }
 
     public bool TryMap(string control, double value, out TswHttpApiAxisCommand command)
     {
         command = default!;
-        if (!bindings.TryGetValue(control, out var binding))
+        if (!currentProfile.Axes.TryGetValue(control, out var bindings) || bindings.Count == 0)
         {
             return false;
         }
 
-        var clamped = Math.Max(binding.SourceMin, Math.Min(binding.SourceMax, value));
-        var mapped = MapValue(binding, clamped);
-        if (lastValues.TryGetValue(control, out var previous) && Math.Abs(previous - mapped) < 0.005)
+        var outputs = new List<TswHttpApiAxisOutput>(bindings.Count);
+        foreach (var binding in bindings)
+        {
+            var controlName = ResolveControlName(binding.ControlName);
+            var mapped = binding.ConstantValue ?? MapValue(binding, value);
+            var outputKey = $"{control}|{controlName}";
+            if (lastValues.TryGetValue(outputKey, out var previous) && Math.Abs(previous - mapped) < 0.005)
+            {
+                continue;
+            }
+
+            lastValues[outputKey] = mapped;
+            outputs.Add(new TswHttpApiAxisOutput(controlName, mapped));
+        }
+
+        if (outputs.Count == 0)
         {
             return false;
         }
 
-        lastValues[control] = mapped;
-        command = new TswHttpApiAxisCommand(control, binding.ControlName, mapped);
+        command = new TswHttpApiAxisCommand(control, outputs);
         return true;
+    }
+
+    private string ResolveControlName(string controlName)
+    {
+        return controlName
+            .Replace("{SIDE}", activeSide, StringComparison.OrdinalIgnoreCase)
+            .Replace("{SIDE:front:back}", activeSide == "B" ? "back" : "front", StringComparison.OrdinalIgnoreCase);
     }
 
     private static double MapValue(TswHttpApiAxisBinding binding, double value)
     {
+        var clamped = Math.Max(binding.SourceMin, Math.Min(binding.SourceMax, value));
         if (binding.SourceNeutral is not null && binding.TargetNeutral is not null)
         {
             var sourceNeutral = binding.SourceNeutral.Value;
             var targetNeutral = binding.TargetNeutral.Value;
-            if (value >= sourceNeutral)
+            if (clamped >= sourceNeutral)
             {
-                var normalized = (value - sourceNeutral) / Math.Max(0.0001, binding.SourceMax - sourceNeutral);
+                var normalized = (clamped - sourceNeutral) / Math.Max(0.0001, binding.SourceMax - sourceNeutral);
                 return targetNeutral + (binding.TargetMax - targetNeutral) * normalized;
             }
 
-            var brakeNormalized = (sourceNeutral - value) / Math.Max(0.0001, sourceNeutral - binding.SourceMin);
+            var brakeNormalized = (sourceNeutral - clamped) / Math.Max(0.0001, sourceNeutral - binding.SourceMin);
             return targetNeutral - (targetNeutral - binding.TargetMin) * brakeNormalized;
         }
 
-        var normalizedLinear = (value - binding.SourceMin) / Math.Max(0.0001, binding.SourceMax - binding.SourceMin);
+        var normalizedLinear = (clamped - binding.SourceMin) / Math.Max(0.0001, binding.SourceMax - binding.SourceMin);
         return binding.TargetMin + (binding.TargetMax - binding.TargetMin) * normalizedLinear;
     }
 }
 
-internal sealed record TswHttpApiAxisBinding(
-    string ControlName,
-    double SourceMin,
-    double SourceMax,
-    double TargetMin,
-    double TargetMax,
-    double? SourceNeutral = null,
-    double? TargetNeutral = null);
-internal sealed record TswHttpApiAxisCommand(string SourceControl, string ControlName, double Value);
+internal sealed class TswHttpApiProfileCatalog
+{
+    private readonly IReadOnlyList<TswHttpApiProfile> profiles;
+
+    private TswHttpApiProfileCatalog(IReadOnlyList<TswHttpApiProfile> profiles)
+    {
+        this.profiles = profiles;
+        DefaultProfile = profiles.FirstOrDefault(profile => profile.Default)
+            ?? profiles.FirstOrDefault()
+            ?? TswHttpApiProfile.CreateFallback();
+    }
+
+    public TswHttpApiProfile DefaultProfile { get; }
+
+    public static TswHttpApiProfileCatalog Load(Action<string> log)
+    {
+        try
+        {
+            var appDataDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "TrainDeck",
+                "profiles");
+            var userPath = Path.Combine(appDataDir, "tsw-api-profiles.json");
+            var bundledPath = Path.Combine(AppContext.BaseDirectory, "profiles", "tsw-api-profiles.json");
+
+            Directory.CreateDirectory(appDataDir);
+            if (!File.Exists(userPath) && File.Exists(bundledPath))
+            {
+                File.Copy(bundledPath, userPath);
+            }
+
+            var profilePath = File.Exists(userPath) ? userPath : bundledPath;
+            if (!File.Exists(profilePath))
+            {
+                log("TSW profile file not found; using built-in generic API mapping.");
+                return new TswHttpApiProfileCatalog([TswHttpApiProfile.CreateFallback()]);
+            }
+
+            var options = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true,
+                ReadCommentHandling = JsonCommentHandling.Skip,
+                AllowTrailingCommas = true
+            };
+            var file = JsonSerializer.Deserialize<TswHttpApiProfileFile>(File.ReadAllText(profilePath), options);
+            var profiles = file?.Profiles?
+                .Where(profile => !string.IsNullOrWhiteSpace(profile.Id) && profile.Axes.Count > 0)
+                .ToList();
+            if (profiles is null || profiles.Count == 0)
+            {
+                log("TSW profile file had no usable profiles; using built-in generic API mapping.");
+                return new TswHttpApiProfileCatalog([TswHttpApiProfile.CreateFallback()]);
+            }
+
+            log($"Loaded {profiles.Count} TSW API profiles from {profilePath}.");
+            return new TswHttpApiProfileCatalog(profiles);
+        }
+        catch (Exception ex)
+        {
+            log($"TSW profile load failed: {ex.Message}; using built-in generic API mapping.");
+            return new TswHttpApiProfileCatalog([TswHttpApiProfile.CreateFallback()]);
+        }
+    }
+
+    public TswHttpApiProfile Match(string actorClass)
+    {
+        if (string.IsNullOrWhiteSpace(actorClass))
+        {
+            return DefaultProfile;
+        }
+
+        foreach (var profile in profiles.Where(profile => !profile.Default))
+        {
+            if (profile.MatchActorClasses.Any(match => string.Equals(match, actorClass, StringComparison.OrdinalIgnoreCase))
+                || profile.MatchActorContains.Any(match => actorClass.Contains(match, StringComparison.OrdinalIgnoreCase)))
+            {
+                return profile;
+            }
+        }
+
+        return DefaultProfile;
+    }
+}
+
+internal sealed class TswHttpApiProfileFile
+{
+    public List<TswHttpApiProfile> Profiles { get; set; } = [];
+}
+
+internal sealed class TswHttpApiProfile
+{
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+    public bool Default { get; set; }
+    public List<string> MatchActorClasses { get; set; } = [];
+    public List<string> MatchActorContains { get; set; } = [];
+    public Dictionary<string, List<TswHttpApiAxisBinding>> Axes { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public static TswHttpApiProfile CreateFallback()
+    {
+        return new TswHttpApiProfile
+        {
+            Id = "generic_tsw",
+            Name = "Generic TSW combined master",
+            Default = true,
+            Axes = new Dictionary<string, List<TswHttpApiAxisBinding>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["reverser"] = [new TswHttpApiAxisBinding { ControlName = "Reverser", SourceMin = -1, SourceMax = 1, TargetMin = -1, TargetMax = 1 }],
+                ["throttle"] = [new TswHttpApiAxisBinding { ControlName = "MasterController", SourceMin = 0, SourceMax = 1, TargetMin = -0.9, TargetMax = 1, SourceNeutral = 0.5, TargetNeutral = 0 }],
+                ["dynamic_brake"] = [new TswHttpApiAxisBinding { ControlName = "DynamicBrake", SourceMin = 0, SourceMax = 1, TargetMin = 0, TargetMax = 1 }],
+                ["train_brake"] = [new TswHttpApiAxisBinding { ControlName = "TrainBrake (Irregular Lever)", SourceMin = 0, SourceMax = 1, TargetMin = 0, TargetMax = 0.8 }],
+                ["independent_brake"] = [new TswHttpApiAxisBinding { ControlName = "IndependentBrake", SourceMin = 0, SourceMax = 1, TargetMin = 0, TargetMax = 1 }]
+            }
+        };
+    }
+}
+
+internal sealed class TswHttpApiAxisBinding
+{
+    public string ControlName { get; set; } = "";
+    public double SourceMin { get; set; }
+    public double SourceMax { get; set; } = 1;
+    public double TargetMin { get; set; }
+    public double TargetMax { get; set; } = 1;
+    public double? SourceNeutral { get; set; }
+    public double? TargetNeutral { get; set; }
+    public double? ConstantValue { get; set; }
+}
+
+internal sealed record TswHttpApiAxisOutput(string ControlName, double Value);
+internal sealed record TswHttpApiAxisCommand(string SourceControl, IReadOnlyList<TswHttpApiAxisOutput> Outputs)
+{
+    public string DisplayControls => string.Join(", ", Outputs.Select(output => output.ControlName));
+}
 internal sealed record TswHttpApiStatusEventArgs(bool Ready, string Status);
 internal sealed record TswCabControlSnapshot(string Name, double InputValue, double? NormalizedValue, string Identifier);

@@ -7,4 +7,8 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="profiles\tsw-api-profiles.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

@@ -187,7 +187,8 @@ internal sealed class BridgeService : IDisposable
         if (handledByApi && tswApi.TryMapAxis(message.Control, value, out var apiCommand))
         {
             _ = tswApi.SendAxisAsync(apiCommand);
-            LogInfo($"api    axis {message.Control,-12} -> {apiCommand.ControlName} {apiCommand.Value:0.000}");
+            var values = string.Join(", ", apiCommand.Outputs.Select(output => $"{output.ControlName}={output.Value:0.000}"));
+            LogInfo($"api    axis {message.Control,-12} -> {values}");
         }
 
         if (!handledByApi && ShouldSendKeyboard())
