@@ -72,6 +72,16 @@ internal sealed class TswHttpApiClient : IDisposable
         return axisMapper.IsMapped(control);
     }
 
+    public bool TryMapButton(string command, out TswHttpApiButtonCommand buttonCommand)
+    {
+        return axisMapper.TryMapButton(command, out buttonCommand);
+    }
+
+    public bool IsButtonMapped(string command)
+    {
+        return axisMapper.IsButtonMapped(command);
+    }
+
     public async Task SendAxisAsync(TswHttpApiAxisCommand command)
     {
         if (!IsReady || string.IsNullOrWhiteSpace(apiKey))
@@ -92,6 +102,47 @@ internal sealed class TswHttpApiClient : IDisposable
         catch (Exception ex)
         {
             UpdateStatus(false, $"API send failed: {ex.Message}");
+        }
+    }
+
+    public async Task SendButtonAsync(TswHttpApiButtonCommand command)
+    {
+        if (!IsReady || string.IsNullOrWhiteSpace(apiKey))
+        {
+            return;
+        }
+
+        try
+        {
+            foreach (var step in command.Steps)
+            {
+                if (step.DelayBeforeMs > 0)
+                {
+                    await Task.Delay(step.DelayBeforeMs);
+                }
+
+                await EnsureInteractingAsync(step.ControlName, CancellationToken.None);
+                await PatchAsync(
+                    $"/set/CurrentDrivableActor/{Uri.EscapeDataString(step.ControlName)}.InputValue?Value={step.Value.ToString("0.000000", CultureInfo.InvariantCulture)}",
+                    CancellationToken.None);
+
+                if (step.HoldMs > 0)
+                {
+                    await Task.Delay(step.HoldMs);
+                    await PatchAsync(
+                        $"/set/CurrentDrivableActor/{Uri.EscapeDataString(step.ControlName)}.InputValue?Value=0.000000",
+                        CancellationToken.None);
+                }
+
+                if (step.DelayAfterMs > 0)
+                {
+                    await Task.Delay(step.DelayAfterMs);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            UpdateStatus(false, $"API button failed: {ex.Message}");
         }
     }
 
@@ -441,6 +492,11 @@ internal sealed class TswHttpApiAxisMapper
         return currentProfile.Axes.ContainsKey(control);
     }
 
+    public bool IsButtonMapped(string command)
+    {
+        return currentProfile.Buttons.ContainsKey(command);
+    }
+
     public bool TryMap(string control, double value, out TswHttpApiAxisCommand command)
     {
         command = default!;
@@ -470,6 +526,32 @@ internal sealed class TswHttpApiAxisMapper
         }
 
         command = new TswHttpApiAxisCommand(control, outputs);
+        return true;
+    }
+
+    public bool TryMapButton(string command, out TswHttpApiButtonCommand buttonCommand)
+    {
+        buttonCommand = default!;
+        if (!currentProfile.Buttons.TryGetValue(command, out var binding) || binding.Steps.Count == 0)
+        {
+            return false;
+        }
+
+        var steps = binding.Steps
+            .Where(step => !string.IsNullOrWhiteSpace(step.ControlName))
+            .Select(step => new TswHttpApiButtonStepCommand(
+                ResolveControlName(step.ControlName),
+                step.Value,
+                step.HoldMs,
+                step.DelayBeforeMs,
+                step.DelayAfterMs))
+            .ToList();
+        if (steps.Count == 0)
+        {
+            return false;
+        }
+
+        buttonCommand = new TswHttpApiButtonCommand(command, steps);
         return true;
     }
 
@@ -609,6 +691,7 @@ internal sealed class TswHttpApiProfile
     public List<string> MatchActorClasses { get; set; } = [];
     public List<string> MatchActorContains { get; set; } = [];
     public Dictionary<string, List<TswHttpApiAxisBinding>> Axes { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, TswHttpApiButtonBinding> Buttons { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
     public static TswHttpApiProfile CreateFallback()
     {
@@ -641,10 +724,26 @@ internal sealed class TswHttpApiAxisBinding
     public double? ConstantValue { get; set; }
 }
 
+internal sealed class TswHttpApiButtonBinding
+{
+    public List<TswHttpApiButtonStep> Steps { get; set; } = [];
+}
+
+internal sealed class TswHttpApiButtonStep
+{
+    public string ControlName { get; set; } = "";
+    public double Value { get; set; } = 1;
+    public int HoldMs { get; set; } = 90;
+    public int DelayBeforeMs { get; set; }
+    public int DelayAfterMs { get; set; } = 100;
+}
+
 internal sealed record TswHttpApiAxisOutput(string ControlName, double Value);
 internal sealed record TswHttpApiAxisCommand(string SourceControl, IReadOnlyList<TswHttpApiAxisOutput> Outputs)
 {
     public string DisplayControls => string.Join(", ", Outputs.Select(output => output.ControlName));
 }
+internal sealed record TswHttpApiButtonStepCommand(string ControlName, double Value, int HoldMs, int DelayBeforeMs, int DelayAfterMs);
+internal sealed record TswHttpApiButtonCommand(string SourceCommand, IReadOnlyList<TswHttpApiButtonStepCommand> Steps);
 internal sealed record TswHttpApiStatusEventArgs(bool Ready, string Status);
 internal sealed record TswCabControlSnapshot(string Name, double InputValue, double? NormalizedValue, string Identifier);

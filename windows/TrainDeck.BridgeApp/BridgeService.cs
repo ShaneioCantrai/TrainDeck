@@ -151,9 +151,23 @@ internal sealed class BridgeService : IDisposable
         var command = message.Command ?? "";
         var label = message.Label ?? command;
         var mapped = profile.Buttons.TryGetValue(command, out var binding);
-        var target = mapped ? binding!.Key : "unmapped";
+        var handledByApi = tswApi.IsReady && tswApi.IsButtonMapped(command);
+        var target = handledByApi ? "api" : mapped ? binding!.Key : "unmapped";
 
         LogInfo($"button {state,-4} {command,-18} ({label}) -> {target}");
+
+        if (handledByApi)
+        {
+            if (string.Equals(state, "down", StringComparison.OrdinalIgnoreCase)
+                && tswApi.TryMapButton(command, out var apiCommand))
+            {
+                _ = tswApi.SendButtonAsync(apiCommand);
+                var controls = string.Join(", ", apiCommand.Steps.Select(step => step.ControlName));
+                LogInfo($"api    button {command,-12} -> {controls}");
+            }
+
+            return;
+        }
 
         if (!ShouldSendKeyboard() || !mapped)
         {

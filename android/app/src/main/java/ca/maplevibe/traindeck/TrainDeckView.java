@@ -33,6 +33,7 @@ public final class TrainDeckView extends View {
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF settingsRect = new RectF();
+    private final RectF afbToggleRect = new RectF();
     private final RectF[] buttonRects = new RectF[24];
     private final AxisControl[] axes = new AxisControl[]{
             new AxisControl("reverser", "Rev", -1f, 1f, 0f, Color.rgb(73, 160, 120), 0.55f, 3),
@@ -40,7 +41,7 @@ public final class TrainDeckView extends View {
             new AxisControl("dynamic_brake", "Dynamic", 0f, 1f, 0f, Color.rgb(217, 154, 49), 1f, 0),
             new AxisControl("train_brake", "Train Brake", 0f, 1f, 0f, Color.rgb(206, 84, 65), 1f, 0),
             new AxisControl("independent_brake", "Ind Brake", 0f, 1f, 0f, Color.rgb(176, 106, 190), 1f, 0),
-            new AxisControl("range", "Range", 0f, 1f, 0f, Color.rgb(232, 236, 239), 1f, 0)
+            new AxisControl("afb", "AFB", 0f, 1f, 0f, Color.rgb(48, 188, 204), 1f, 0)
     };
 
     private Callback callback;
@@ -54,6 +55,8 @@ public final class TrainDeckView extends View {
     private long emergencyHoldStartedAt = 0L;
     private float emergencyRequestedValue = EMERGENCY_VALUE;
     private boolean emergencyUnlocked = false;
+    private boolean afbEnabled = false;
+    private float lastAfbValue = 0.35f;
 
     public TrainDeckView(Context context) {
         super(context);
@@ -100,6 +103,11 @@ public final class TrainDeckView extends View {
                     if (callback != null) {
                         callback.onSettingsRequested();
                     }
+                    return true;
+                }
+
+                if (afbToggleRect.contains(x, y)) {
+                    toggleAfb();
                     return true;
                 }
 
@@ -190,6 +198,23 @@ public final class TrainDeckView extends View {
         paint.setColor(Color.rgb(232, 236, 239));
         paint.setTextSize(dp(16));
         canvas.drawText(fitText(target, settingsRect.width() - dp(24), dp(16)), settingsRect.left + dp(12), settingsRect.top + dp(34), paint);
+
+        afbToggleRect.set(dp(165), dp(9), dp(286), dp(49));
+        paint.setColor(afbEnabled ? Color.rgb(48, 188, 204) : Color.rgb(27, 32, 37));
+        canvas.drawRoundRect(afbToggleRect, dp(6), dp(6), paint);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(dp(1));
+        paint.setColor(afbEnabled ? Color.WHITE : Color.rgb(48, 188, 204));
+        canvas.drawRoundRect(afbToggleRect, dp(6), dp(6), paint);
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(afbEnabled ? Color.rgb(7, 19, 24) : Color.rgb(195, 205, 214));
+        paint.setTextSize(dp(12));
+        paint.setFakeBoldText(false);
+        canvas.drawText("AFB", afbToggleRect.left + dp(11), afbToggleRect.top + dp(15), paint);
+        paint.setTextSize(dp(16));
+        paint.setFakeBoldText(true);
+        canvas.drawText(afbEnabled ? "ON" : "OFF", afbToggleRect.left + dp(11), afbToggleRect.top + dp(34), paint);
+        paint.setFakeBoldText(false);
     }
 
     private void drawAxes(Canvas canvas, float w, float h) {
@@ -275,6 +300,13 @@ public final class TrainDeckView extends View {
             paint.setFakeBoldText(true);
             canvas.drawText(throttleHandleReadout(axis.value), r.centerX(), knob.centerY() + dp(4), paint);
             paint.setFakeBoldText(false);
+        } else if ("afb".equals(axis.control)) {
+            paint.setColor(Color.rgb(7, 19, 24));
+            paint.setTextAlign(Paint.Align.CENTER);
+            paint.setTextSize(dp(12));
+            paint.setFakeBoldText(true);
+            canvas.drawText(String.format(Locale.US, "%.0f", axis.value * 300f), r.centerX(), knob.centerY() + dp(4), paint);
+            paint.setFakeBoldText(false);
         }
 
         paint.setTextAlign(Paint.Align.CENTER);
@@ -288,6 +320,8 @@ public final class TrainDeckView extends View {
         paint.setTextSize(dp(13));
         String valueText = "throttle".equals(axis.control)
                 ? throttleReadout(axis.value)
+                : "afb".equals(axis.control)
+                ? (afbEnabled ? String.format(Locale.US, "%.0f km/h", axis.value * 300f) : "Off")
                 : axis.notches == 3 && axis.min < 0
                 ? axis.value > 0.25f ? "Forward" : axis.value < -0.25f ? "Reverse" : "Neutral"
                 : axis.min < 0
@@ -421,12 +455,69 @@ public final class TrainDeckView extends View {
         float value = axis.min + (axis.max - axis.min) * norm;
         if ("throttle".equals(axis.control)) {
             value = applyEmergencyGate(axis, value);
+        } else if ("afb".equals(axis.control)) {
+            afbEnabled = value > 0.01f;
+            if (afbEnabled) {
+                lastAfbValue = value;
+            }
         }
         axis.value = value;
         if (callback != null) {
             callback.onAxisChanged(axis.control, axis.value);
         }
         invalidate();
+    }
+
+    private void toggleAfb() {
+        AxisControl afb = null;
+        for (AxisControl axis : axes) {
+            if ("afb".equals(axis.control)) {
+                afb = axis;
+                break;
+            }
+        }
+        if (afb == null) {
+            return;
+        }
+
+        final String afbControl = afb.control;
+        if (afbEnabled) {
+            afbEnabled = false;
+            if (afb.value > 0.01f) {
+                lastAfbValue = afb.value;
+            }
+            afb.value = 0f;
+            sendAxisValue("throttle", THROTTLE_NEUTRAL);
+            postDelayed(() -> sendAxisValue(afbControl, 0f), 120);
+            postDelayed(() -> sendVirtualButton("AFB Off", "afb_off"), 260);
+        } else {
+            afbEnabled = true;
+            afb.value = Math.max(0.05f, lastAfbValue);
+            float restoredAfb = afb.value;
+            sendAxisValue("throttle", THROTTLE_NEUTRAL);
+            postDelayed(() -> sendAxisValue(afbControl, 0f), 120);
+            postDelayed(() -> sendVirtualButton("AFB On", "afb_on"), 260);
+            postDelayed(() -> sendAxisValue(afbControl, restoredAfb), 520);
+        }
+
+        performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+        invalidate();
+    }
+
+    private void sendAxisValue(String control, float value) {
+        if (callback != null) {
+            callback.onAxisChanged(control, value);
+        }
+    }
+
+    private void sendVirtualButton(String label, String command) {
+        if (callback == null) {
+            return;
+        }
+
+        DeckProfile.ButtonDef def = new DeckProfile.ButtonDef(label, command);
+        callback.onButtonDown(-1, def);
+        callback.onButtonUp(-1, def);
     }
 
     private float applyEmergencyGate(AxisControl axis, float requestedValue) {

@@ -173,6 +173,9 @@
         ],
         "train_brake": [
           { "controlName": "DriversBrake_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.1, "targetMax": 0.75 }
+        ],
+        "afb": [
+          { "controlName": "ForceSelector_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
         ]
       }
     },
@@ -187,6 +190,9 @@
         ],
         "train_brake": [
           { "controlName": "DriversBrake_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.1, "targetMax": 0.75 }
+        ],
+        "afb": [
+          { "controlName": "ForceSelector_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
         ]
       }
     },
@@ -201,6 +207,9 @@
         ],
         "train_brake": [
           { "controlName": "DriversBrake_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.1, "targetMax": 0.75 }
+        ],
+        "afb": [
+          { "controlName": "ForceSelector_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
         ]
       }
     },
@@ -215,6 +224,9 @@
         ],
         "train_brake": [
           { "controlName": "DriversBrake_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.1, "targetMax": 0.8 }
+        ],
+        "afb": [
+          { "controlName": "ForceSelector_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
         ]
       }
     },
@@ -229,6 +241,9 @@
         "train_brake": [
           { "controlName": "TrainBrake_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.1, "targetMax": 0.8 },
           { "controlName": "DynamicBrake_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.1, "targetMax": 0.8 }
+        ],
+        "afb": [
+          { "controlName": "AFB_Speed_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
         ]
       }
     },
@@ -274,6 +289,9 @@
         ],
         "train_brake": [
           { "controlName": "TrainBrake_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.1, "targetMax": 0.9 }
+        ],
+        "afb": [
+          { "controlName": "AFB_Speed_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
         ]
       }
     },
@@ -303,6 +321,9 @@
         ],
         "train_brake": [
           { "controlName": "TrainBrake_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.1, "targetMax": 0.8 }
+        ],
+        "afb": [
+          { "controlName": "AFB_Speed_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
         ]
       }
     },
@@ -316,7 +337,26 @@
         ],
         "train_brake": [
           { "controlName": "TrainBrake", "sourceMin": 0, "sourceMax": 1, "targetMin": 0, "targetMax": 0.81 }
+        ],
+        "afb": [
+          { "controlName": "AFB_Controller", "sourceMin": 0, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
         ]
+      },
+      "buttons": {
+        "afb_on": {
+          "steps": [
+            { "controlName": "S1_09", "holdMs": 90, "delayAfterMs": 120 },
+            { "controlName": "S1_06", "holdMs": 90, "delayAfterMs": 120 },
+            { "controlName": "S1_00", "holdMs": 90, "delayAfterMs": 80 }
+          ]
+        },
+        "afb_off": {
+          "steps": [
+            { "controlName": "S1_09", "holdMs": 90, "delayAfterMs": 120 },
+            { "controlName": "S1_01", "holdMs": 90, "delayAfterMs": 120 },
+            { "controlName": "S1_00", "holdMs": 90, "delayAfterMs": 80 }
+          ]
+        }
       }
     },
     {
@@ -379,6 +419,9 @@
         "train_brake": [
           { "controlName": "TrainBrake_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.1, "targetMax": 0.8 },
           { "controlName": "DynamicBrake_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.1, "targetMax": 0.8 }
+        ],
+        "afb": [
+          { "controlName": "AFB_Speed_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
         ]
       }
     },
@@ -410,6 +453,9 @@
         ],
         "train_brake": [
           { "controlName": "AutomaticBrakeLever", "sourceMin": 0, "sourceMax": 1, "targetMin": 0, "targetMax": 0.75 }
+        ],
+        "afb": [
+          { "controlName": "CruiseControlLever", "sourceMin": 0, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
         ]
       }
     },
