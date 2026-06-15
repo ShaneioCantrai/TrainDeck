@@ -14,6 +14,7 @@ internal sealed class BridgeService : IDisposable
     private readonly TswHttpApiClient tswApi;
     private bool lastAutoTargetActive;
     private bool deckNeutralizedSinceApiLost;
+    private bool autoAxisSuppressedUntilApiReadyLogged;
     private CancellationTokenSource? pendingDeckNeutralizeCts;
     private CancellationTokenSource? cts;
     private UdpClient? udp;
@@ -256,7 +257,7 @@ internal sealed class BridgeService : IDisposable
             LogInfo($"api    axis {message.Control,-12} -> {values}");
         }
 
-        if (!handledByApi && ShouldSendKeyboard())
+        if (!handledByApi && ShouldSendKeyboardAxis())
         {
             var focused = ForegroundAppDetector.FocusTrainSimWorld();
             KeyboardOutput.ClearLastSummary();
@@ -287,7 +288,7 @@ internal sealed class BridgeService : IDisposable
             || string.Equals(key, "None", StringComparison.OrdinalIgnoreCase);
     }
 
-    private bool ShouldSendKeyboard()
+    private bool ShouldSendKeyboardAxis()
     {
         if (KeyboardEnabled)
         {
@@ -296,6 +297,18 @@ internal sealed class BridgeService : IDisposable
 
         if (!AutoArmTrainSimWorld)
         {
+            return false;
+        }
+
+        if (!tswApi.IsReady)
+        {
+            if (!autoAxisSuppressedUntilApiReadyLogged)
+            {
+                autoAxisSuppressedUntilApiReadyLogged = true;
+                axisMapper.Reset();
+                LogInfo("Auto-arm axis output waiting for TSW HTTP API. Use explicit keyboard output to force key-based lever fallback.");
+            }
+
             return false;
         }
 
@@ -324,6 +337,7 @@ internal sealed class BridgeService : IDisposable
 
         if (e.Ready)
         {
+            autoAxisSuppressedUntilApiReadyLogged = false;
             deckNeutralizedSinceApiLost = false;
             CancelDeckNeutralize();
             return;
