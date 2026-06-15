@@ -296,6 +296,18 @@
         "afb": [
           { "controlName": "AFB_Speed_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
         ]
+      },
+      "buttons": {
+        "afb_on": {
+          "steps": [
+            { "controlName": "AFB_ProxySwitchControl", "value": 1, "holdMs": 0, "delayAfterMs": 80 }
+          ]
+        },
+        "afb_off": {
+          "steps": [
+            { "controlName": "AFB_ProxySwitchControl", "value": 0, "holdMs": 0, "delayAfterMs": 80 }
+          ]
+        }
       }
     },
     {
