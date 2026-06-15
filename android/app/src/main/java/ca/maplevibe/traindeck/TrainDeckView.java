@@ -18,6 +18,8 @@ public final class TrainDeckView extends View {
     private static final float EMERGENCY_GATE_VALUE = 0.08f;
     private static final float EMERGENCY_VALUE = 0f;
     private static final long EMERGENCY_HOLD_MS = 2300L;
+    private static final float AFB_MAX_SPEED_KMH = 300f;
+    private static final float AFB_STEP_KMH = 10f;
 
     public interface Callback {
         void onButtonDown(int index, DeckProfile.ButtonDef button);
@@ -41,7 +43,7 @@ public final class TrainDeckView extends View {
             new AxisControl("dynamic_brake", "Dynamic", 0f, 1f, 0f, Color.rgb(217, 154, 49), 1f, 0),
             new AxisControl("train_brake", "Train Brake", 0f, 1f, 0f, Color.rgb(206, 84, 65), 1f, 0),
             new AxisControl("independent_brake", "Ind Brake", 0f, 1f, 0f, Color.rgb(176, 106, 190), 1f, 0),
-            new AxisControl("afb", "AFB", 0f, 1f, 0f, Color.rgb(48, 188, 204), 1f, 0)
+            new AxisControl("afb", "AFB", 0f, 1f, 0f, Color.rgb(48, 188, 204), 1f, 31)
     };
 
     private Callback callback;
@@ -56,7 +58,7 @@ public final class TrainDeckView extends View {
     private float emergencyRequestedValue = EMERGENCY_VALUE;
     private boolean emergencyUnlocked = false;
     private boolean afbEnabled = false;
-    private float lastAfbValue = 0.35f;
+    private float lastAfbValue = 80f / AFB_MAX_SPEED_KMH;
 
     public TrainDeckView(Context context) {
         super(context);
@@ -305,7 +307,7 @@ public final class TrainDeckView extends View {
             paint.setTextAlign(Paint.Align.CENTER);
             paint.setTextSize(dp(12));
             paint.setFakeBoldText(true);
-            canvas.drawText(String.format(Locale.US, "%.0f", axis.value * 300f), r.centerX(), knob.centerY() + dp(4), paint);
+            canvas.drawText(String.format(Locale.US, "%.0f", afbSpeedKmh(axis.value)), r.centerX(), knob.centerY() + dp(4), paint);
             paint.setFakeBoldText(false);
         }
 
@@ -321,7 +323,7 @@ public final class TrainDeckView extends View {
         String valueText = "throttle".equals(axis.control)
                 ? throttleReadout(axis.value)
                 : "afb".equals(axis.control)
-                ? (afbEnabled ? String.format(Locale.US, "%.0f km/h", axis.value * 300f) : "Off")
+                ? (afbEnabled ? String.format(Locale.US, "%.0f km/h", afbSpeedKmh(axis.value)) : "Off")
                 : axis.notches == 3 && axis.min < 0
                 ? axis.value > 0.25f ? "Forward" : axis.value < -0.25f ? "Reverse" : "Neutral"
                 : axis.min < 0
@@ -456,6 +458,7 @@ public final class TrainDeckView extends View {
         if ("throttle".equals(axis.control)) {
             value = applyEmergencyGate(axis, value);
         } else if ("afb".equals(axis.control)) {
+            value = snapAfbValue(value);
             afbEnabled = value > 0.01f;
             if (afbEnabled) {
                 lastAfbValue = value;
@@ -492,7 +495,7 @@ public final class TrainDeckView extends View {
             postDelayed(() -> sendVirtualButton("AFB Off", "afb_off"), 260);
         } else {
             afbEnabled = true;
-            afb.value = Math.max(0.05f, lastAfbValue);
+            afb.value = Math.max(AFB_STEP_KMH / AFB_MAX_SPEED_KMH, snapAfbValue(lastAfbValue));
             float restoredAfb = afb.value;
             sendAxisValue("throttle", THROTTLE_NEUTRAL);
             postDelayed(() -> sendAxisValue(afbControl, 0f), 120);
@@ -502,6 +505,16 @@ public final class TrainDeckView extends View {
 
         performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
         invalidate();
+    }
+
+    private static float snapAfbValue(float value) {
+        float speed = Math.round(afbSpeedKmh(value) / AFB_STEP_KMH) * AFB_STEP_KMH;
+        speed = Math.max(0f, Math.min(AFB_MAX_SPEED_KMH, speed));
+        return speed / AFB_MAX_SPEED_KMH;
+    }
+
+    private static float afbSpeedKmh(float value) {
+        return Math.round(Math.max(0f, Math.min(1f, value)) * AFB_MAX_SPEED_KMH);
     }
 
     private void sendAxisValue(String control, float value) {
