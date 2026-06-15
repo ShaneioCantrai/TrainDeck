@@ -290,6 +290,9 @@
         "train_brake": [
           { "controlName": "TrainBrake_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.1, "targetMax": 0.9 }
         ],
+        "independent_brake": [
+          { "controlName": "DirectBrake_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.5, "targetMax": 1 }
+        ],
         "afb": [
           { "controlName": "AFB_Speed_{SIDE}", "sourceMin": 0, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
         ]
