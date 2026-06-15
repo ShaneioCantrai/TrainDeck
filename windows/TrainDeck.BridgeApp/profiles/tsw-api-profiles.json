@@ -427,6 +427,70 @@
       }
     },
     {
+      "id": "br442_dlg",
+      "name": "BR 442 Talent 2 DB - Dresden Leipzig",
+      "matchActorClasses": [ "RVM_DLG_DB_BR442_T1_C" ],
+      "matchActorContains": [ "DLG_DB_BR442" ],
+      "axes": {
+        "reverser": [
+          { "controlName": "Reverser", "sourceMin": -1, "sourceMax": 1, "targetMin": -1, "targetMax": 1 }
+        ],
+        "throttle": [
+          { "controlName": "ThrottleAndBrake", "sourceMin": 0, "sourceMax": 1, "targetMin": -1, "targetMax": 1, "sourceNeutral": 0.5, "targetNeutral": 0 }
+        ],
+        "train_brake": [
+          { "controlName": "TrainBrake", "sourceMin": 0, "sourceMax": 1, "targetMin": 0, "targetMax": 1 }
+        ]
+      },
+      "buttons": {
+        "horn": {
+          "steps": [
+            { "controlName": "HornHigh", "value": 1, "releaseValue": 0, "holdMs": 250, "delayAfterMs": 40 }
+          ]
+        },
+        "sander": {
+          "steps": [
+            { "controlName": "Sander", "value": 1, "releaseValue": 0.5, "holdMs": 250, "delayAfterMs": 40 }
+          ]
+        },
+        "wipers": {
+          "steps": [
+            { "controlName": "Wipers", "value": 1, "releaseValue": 0, "holdMs": 100, "delayAfterMs": 40 }
+          ]
+        },
+        "headlights": {
+          "steps": [
+            { "controlName": "Headlights/TailLights", "value": 1, "holdMs": 0, "delayAfterMs": 40 }
+          ]
+        },
+        "door_left": {
+          "steps": [
+            { "controlName": "PassengerDoorsLeft", "value": 1, "releaseValue": 0, "holdMs": 140, "delayAfterMs": 40 }
+          ]
+        },
+        "door_right": {
+          "steps": [
+            { "controlName": "PassengerDoorsRight", "value": 1, "releaseValue": 0, "holdMs": 140, "delayAfterMs": 40 }
+          ]
+        },
+        "door_close_left": {
+          "steps": [
+            { "controlName": "PassengerDoorsClose", "value": 1, "releaseValue": 0, "holdMs": 140, "delayAfterMs": 40 }
+          ]
+        },
+        "door_close_right": {
+          "steps": [
+            { "controlName": "PassengerDoorsClose", "value": 1, "releaseValue": 0, "holdMs": 140, "delayAfterMs": 40 }
+          ]
+        },
+        "emergency_reset": {
+          "steps": [
+            { "controlName": "EmergencyBrake", "value": 0, "holdMs": 0, "delayAfterMs": 40 }
+          ]
+        }
+      }
+    },
+    {
       "id": "br442_1442",
       "name": "BR 442 Talent 2 DB",
       "matchActorContains": [ "BR442", "BR1442", "Talent" ],
