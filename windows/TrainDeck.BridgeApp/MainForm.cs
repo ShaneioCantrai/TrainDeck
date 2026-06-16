@@ -207,7 +207,7 @@ internal sealed class MainForm : Form
         };
         row.Controls.Add(startStopButton);
 
-        keyboardCheck.Text = "Arm TSW6 keyboard output";
+        keyboardCheck.Text = "Quest assist keyboard axes";
         keyboardCheck.AutoSize = true;
         keyboardCheck.Padding = new Padding(8, 7, 0, 0);
         keyboardCheck.ForeColor = Color.FromArgb(232, 236, 239);
@@ -215,8 +215,8 @@ internal sealed class MainForm : Form
         {
             bridge.KeyboardEnabled = keyboardCheck.Checked;
             AppendLog(keyboardCheck.Checked
-                ? "TSW6 keyboard output armed. Focus Train Sim World before moving controls."
-                : "Keyboard output disarmed.");
+                ? "Quest assist armed. Axis controls use keyboard fallback so TSW objectives can see input."
+                : "Quest assist disarmed. Axis controls prefer the TSW HTTP API.");
         };
         row.Controls.Add(keyboardCheck);
 

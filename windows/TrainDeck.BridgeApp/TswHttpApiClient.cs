@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace TrainDeck.BridgeApp;
 
@@ -72,6 +73,11 @@ internal sealed class TswHttpApiClient : IDisposable
         return axisMapper.IsMapped(control);
     }
 
+    public Dictionary<string, List<TrainDeckAxisOption>> GetAxisOptions()
+    {
+        return axisMapper.GetAxisOptions();
+    }
+
     public bool TryMapButton(string command, out TswHttpApiButtonCommand buttonCommand)
     {
         return axisMapper.TryMapButton(command, out buttonCommand);
@@ -122,6 +128,28 @@ internal sealed class TswHttpApiClient : IDisposable
                 }
 
                 await EnsureInteractingAsync(step.ControlName, CancellationToken.None);
+                if (step.CycleValues.Count > 0)
+                {
+                    var current = await TryGetDoubleValueAsync(
+                        $"/get/CurrentDrivableActor/{Uri.EscapeDataString(step.ControlName)}.Function.GetNormalisedInputValue",
+                        "ReturnValue",
+                        CancellationToken.None)
+                        ?? await TryGetDoubleValueAsync(
+                            $"/get/CurrentDrivableActor/{Uri.EscapeDataString(step.ControlName)}.InputValue",
+                            "InputValue",
+                            CancellationToken.None);
+                    var nextValue = NextCycleValue(step.CycleValues, current);
+                    await PatchAsync(
+                        $"/set/CurrentDrivableActor/{Uri.EscapeDataString(step.ControlName)}.InputValue?Value={nextValue.ToString("0.000000", CultureInfo.InvariantCulture)}",
+                        CancellationToken.None);
+                    if (step.DelayAfterMs > 0)
+                    {
+                        await Task.Delay(step.DelayAfterMs);
+                    }
+
+                    continue;
+                }
+
                 await PatchAsync(
                     $"/set/CurrentDrivableActor/{Uri.EscapeDataString(step.ControlName)}.InputValue?Value={step.Value.ToString("0.000000", CultureInfo.InvariantCulture)}",
                     CancellationToken.None);
@@ -145,6 +173,46 @@ internal sealed class TswHttpApiClient : IDisposable
         {
             UpdateStatus(false, $"API button failed: {ex.Message}");
         }
+    }
+
+    private static double NextCycleValue(IReadOnlyList<double> cycleValues, double? current)
+    {
+        if (cycleValues.Count == 0)
+        {
+            return 0;
+        }
+
+        if (current is null)
+        {
+            return cycleValues[0];
+        }
+
+        var nearestIndex = 0;
+        var nearestDistance = double.MaxValue;
+        for (var i = 0; i < cycleValues.Count; i++)
+        {
+            var distance = Math.Abs(cycleValues[i] - current.Value);
+            if (distance < nearestDistance)
+            {
+                nearestDistance = distance;
+                nearestIndex = i;
+            }
+        }
+
+        if (nearestDistance <= 0.08)
+        {
+            return cycleValues[(nearestIndex + 1) % cycleValues.Count];
+        }
+
+        foreach (var value in cycleValues)
+        {
+            if (value > current.Value)
+            {
+                return value;
+            }
+        }
+
+        return cycleValues[0];
     }
 
     public async Task<string> ProbeNowAsync()
@@ -189,6 +257,12 @@ internal sealed class TswHttpApiClient : IDisposable
             var snapshotPath = Path.Combine(snapshotDir, $"tsw-cab-{DateTime.Now:yyyyMMdd-HHmmss}.txt");
             File.WriteAllLines(snapshotPath, lines);
 
+            var autoMap = TswHttpApiProfileCatalog.MergeSnapshot(actor, controls, log);
+            if (autoMap.Changed)
+            {
+                axisMapper.ReloadProfiles(actor, cab);
+            }
+
             var throttleHints = controls
                 .Where(c => c.Name.Contains("throttle", StringComparison.OrdinalIgnoreCase)
                     || c.Name.Contains("master", StringComparison.OrdinalIgnoreCase)
@@ -198,9 +272,12 @@ internal sealed class TswHttpApiClient : IDisposable
                 .Take(16)
                 .Select(c => $"{c.Name}={c.InputValue:0.000}");
             var hintText = string.Join("; ", throttleHints);
+            var autoMapText = autoMap.MappedCount == 0
+                ? autoMap.Message
+                : $"{autoMap.Message} ({autoMap.MappedCount} bindings)";
             return string.IsNullOrWhiteSpace(hintText)
-                ? $"Cab snapshot saved: {snapshotPath}"
-                : $"Cab snapshot saved: {snapshotPath}. Likely controls: {hintText}";
+                ? $"Cab snapshot saved: {snapshotPath}. {autoMapText}"
+                : $"Cab snapshot saved: {snapshotPath}. {autoMapText}. Likely controls: {hintText}";
         }
         catch (Exception ex)
         {
@@ -467,13 +544,15 @@ internal sealed class TswHttpApiClient : IDisposable
 
 internal sealed class TswHttpApiAxisMapper
 {
-    private readonly TswHttpApiProfileCatalog catalog;
+    private readonly Action<string> log;
+    private TswHttpApiProfileCatalog catalog;
     private readonly Dictionary<string, double> lastValues = new(StringComparer.OrdinalIgnoreCase);
     private TswHttpApiProfile currentProfile;
     private string activeSide = "F";
 
     public TswHttpApiAxisMapper(Action<string> log)
     {
+        this.log = log;
         catalog = TswHttpApiProfileCatalog.Load(log);
         currentProfile = catalog.DefaultProfile;
     }
@@ -494,6 +573,14 @@ internal sealed class TswHttpApiAxisMapper
         }
     }
 
+    public void ReloadProfiles(string actorClass, string activeCab)
+    {
+        catalog = TswHttpApiProfileCatalog.Load(log);
+        currentProfile = catalog.DefaultProfile;
+        lastValues.Clear();
+        SetContext(actorClass, activeCab);
+    }
+
     public bool IsMapped(string control)
     {
         return currentProfile.Axes.ContainsKey(control);
@@ -502,6 +589,26 @@ internal sealed class TswHttpApiAxisMapper
     public bool IsButtonMapped(string command)
     {
         return currentProfile.Buttons.ContainsKey(command);
+    }
+
+    public Dictionary<string, List<TrainDeckAxisOption>> GetAxisOptions()
+    {
+        var options = new Dictionary<string, List<TrainDeckAxisOption>>(StringComparer.OrdinalIgnoreCase);
+        if (currentProfile.Axes.TryGetValue("reverser", out var reverserBindings)
+            && reverserBindings.FirstOrDefault() is { } reverser
+            && ResolveControlName(reverser.ControlName).Contains("MasterControlSwitch", StringComparison.OrdinalIgnoreCase))
+        {
+            options["reverser"] =
+            [
+                new TrainDeckAxisOption("Reverse", -1),
+                new TrainDeckAxisOption("Recovery", -0.5),
+                new TrainDeckAxisOption("Secure", 0),
+                new TrainDeckAxisOption("Forward", 0.5),
+                new TrainDeckAxisOption("Shutdown", 1, Danger: true)
+            ];
+        }
+
+        return options;
     }
 
     public bool TryMap(string control, double value, out TswHttpApiAxisCommand command)
@@ -552,7 +659,8 @@ internal sealed class TswHttpApiAxisMapper
                 step.ReleaseValue,
                 step.HoldMs,
                 step.DelayBeforeMs,
-                step.DelayAfterMs))
+                step.DelayAfterMs,
+                step.CycleValues))
             .ToList();
         if (steps.Count == 0)
         {
@@ -594,6 +702,19 @@ internal sealed class TswHttpApiAxisMapper
 
 internal sealed class TswHttpApiProfileCatalog
 {
+    private static readonly JsonSerializerOptions ProfileReadOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true
+    };
+
+    private static readonly JsonSerializerOptions ProfileWriteOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = true
+    };
+
     private readonly IReadOnlyList<TswHttpApiProfile> profiles;
 
     private TswHttpApiProfileCatalog(IReadOnlyList<TswHttpApiProfile> profiles)
@@ -610,20 +731,8 @@ internal sealed class TswHttpApiProfileCatalog
     {
         try
         {
-            var appDataDir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "TrainDeck",
-                "profiles");
-            var userPath = Path.Combine(appDataDir, "tsw-api-profiles.json");
-            var bundledPath = Path.Combine(AppContext.BaseDirectory, "profiles", "tsw-api-profiles.json");
-
-            Directory.CreateDirectory(appDataDir);
-            if (File.Exists(bundledPath)
-                && (!File.Exists(userPath)
-                    || File.GetLastWriteTimeUtc(bundledPath) > File.GetLastWriteTimeUtc(userPath)))
-            {
-                File.Copy(bundledPath, userPath, overwrite: true);
-            }
+            var userPath = EnsureUserProfileFile();
+            var bundledPath = BundledProfilePath;
 
             var profilePath = File.Exists(userPath) ? userPath : bundledPath;
             if (!File.Exists(profilePath))
@@ -632,15 +741,10 @@ internal sealed class TswHttpApiProfileCatalog
                 return new TswHttpApiProfileCatalog([TswHttpApiProfile.CreateFallback()]);
             }
 
-            var options = new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true,
-                ReadCommentHandling = JsonCommentHandling.Skip,
-                AllowTrailingCommas = true
-            };
-            var file = JsonSerializer.Deserialize<TswHttpApiProfileFile>(File.ReadAllText(profilePath), options);
+            var file = JsonSerializer.Deserialize<TswHttpApiProfileFile>(File.ReadAllText(profilePath), ProfileReadOptions);
             var profiles = file?.Profiles?
-                .Where(profile => !string.IsNullOrWhiteSpace(profile.Id) && profile.Axes.Count > 0)
+                .Where(profile => !string.IsNullOrWhiteSpace(profile.Id)
+                    && (profile.Default || profile.Axes.Count > 0 || profile.Buttons.Count > 0))
                 .ToList();
             if (profiles is null || profiles.Count == 0)
             {
@@ -683,6 +787,440 @@ internal sealed class TswHttpApiProfileCatalog
         }
 
         return DefaultProfile;
+    }
+
+    public static TswProfileAutoMapResult MergeSnapshot(
+        string actorClass,
+        IReadOnlyList<TswCabControlSnapshot> controls,
+        Action<string> log)
+    {
+        if (string.IsNullOrWhiteSpace(actorClass))
+        {
+            return new TswProfileAutoMapResult(false, 0, "Cab automap skipped: actor unknown.");
+        }
+
+        try
+        {
+            var userPath = EnsureUserProfileFile();
+            var file = File.Exists(userPath)
+                ? JsonSerializer.Deserialize<TswHttpApiProfileFile>(File.ReadAllText(userPath), ProfileReadOptions)
+                : null;
+            file ??= new TswHttpApiProfileFile();
+
+            var profile = FindProfileForActor(file, actorClass);
+            if (profile is null)
+            {
+                profile = new TswHttpApiProfile
+                {
+                    Id = MakeProfileId(actorClass),
+                    Name = MakeProfileName(actorClass),
+                    MatchActorClasses = [actorClass]
+                };
+                file.Profiles.Add(profile);
+            }
+
+            if (!profile.MatchActorClasses.Any(match => string.Equals(match, actorClass, StringComparison.OrdinalIgnoreCase)))
+            {
+                profile.MatchActorClasses.Add(actorClass);
+            }
+
+            NormalizeDictionaries(profile);
+            var mapped = InferMappings(profile, controls);
+            if (mapped == 0)
+            {
+                return new TswProfileAutoMapResult(false, 0, $"Cab automap found no obvious controls for {profile.Name}.");
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(userPath)!);
+            File.WriteAllText(userPath, JsonSerializer.Serialize(file, ProfileWriteOptions));
+            log($"Cab automap updated {profile.Name} with {mapped} bindings from snapshot.");
+            return new TswProfileAutoMapResult(true, mapped, $"Cab automap updated {profile.Name}");
+        }
+        catch (Exception ex)
+        {
+            log($"Cab automap failed: {ex.Message}");
+            return new TswProfileAutoMapResult(false, 0, $"Cab automap failed: {ex.Message}");
+        }
+    }
+
+    private static string AppDataProfileDir => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "TrainDeck",
+        "profiles");
+
+    private static string UserProfilePath => Path.Combine(AppDataProfileDir, "tsw-api-profiles.json");
+
+    private static string BundledProfilePath => Path.Combine(AppContext.BaseDirectory, "profiles", "tsw-api-profiles.json");
+
+    private static string EnsureUserProfileFile()
+    {
+        Directory.CreateDirectory(AppDataProfileDir);
+        if (File.Exists(BundledProfilePath) && !File.Exists(UserProfilePath))
+        {
+            File.Copy(BundledProfilePath, UserProfilePath, overwrite: true);
+        }
+
+        return UserProfilePath;
+    }
+
+    private static TswHttpApiProfile? FindProfileForActor(TswHttpApiProfileFile file, string actorClass)
+    {
+        foreach (var profile in file.Profiles.Where(profile => !profile.Default))
+        {
+            if (profile.MatchActorClasses.Any(match => string.Equals(match, actorClass, StringComparison.OrdinalIgnoreCase)))
+            {
+                return profile;
+            }
+        }
+
+        foreach (var profile in file.Profiles.Where(profile => !profile.Default))
+        {
+            if (profile.MatchActorContains.Any(match => actorClass.Contains(match, StringComparison.OrdinalIgnoreCase)))
+            {
+                return profile;
+            }
+        }
+
+        return null;
+    }
+
+    private static int InferMappings(TswHttpApiProfile profile, IReadOnlyList<TswCabControlSnapshot> controls)
+    {
+        var mapped = 0;
+        TswCabControlSnapshot? byName(string name) => controls.FirstOrDefault(
+            control => string.Equals(control.Name, name, StringComparison.OrdinalIgnoreCase));
+        TswCabControlSnapshot? byId(string identifier) => controls.FirstOrDefault(
+            control => string.Equals(control.Identifier, identifier, StringComparison.OrdinalIgnoreCase));
+        List<TswCabControlSnapshot> allById(string identifier) => controls
+            .Where(control => string.Equals(control.Identifier, identifier, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (!profile.Axes.ContainsKey("reverser") && byId("Reverser") is { } reverser)
+        {
+            var masterControlSwitch = reverser.Name.Contains("MasterControlSwitch", StringComparison.OrdinalIgnoreCase);
+            var threePosition = reverser.NormalizedValue is >= 0.32 and <= 0.68
+                || reverser.InputValue is >= 0.35 and <= 0.65
+                || string.Equals(reverser.Name, "Reverser", StringComparison.OrdinalIgnoreCase);
+            mapped += SetAxis(profile, "reverser", new TswHttpApiAxisBinding
+            {
+                ControlName = reverser.Name,
+                SourceMin = -1,
+                SourceMax = 1,
+                TargetMin = threePosition || masterControlSwitch ? 0 : -1,
+                TargetMax = 1,
+                SourceNeutral = threePosition || masterControlSwitch ? 0 : null,
+                TargetNeutral = threePosition || masterControlSwitch ? 0.5 : null
+            });
+        }
+
+        var throttle = byId("Throttle")
+            ?? controls.FirstOrDefault(control =>
+                control.Name.Contains("PowerHandle", StringComparison.OrdinalIgnoreCase)
+                || control.Name.Contains("MasterController", StringComparison.OrdinalIgnoreCase)
+                || control.Name.Contains("TractionBrake", StringComparison.OrdinalIgnoreCase)
+                || control.Name.Contains("Throttle", StringComparison.OrdinalIgnoreCase));
+        if (!profile.Axes.ContainsKey("throttle") && throttle is not null)
+        {
+            mapped += SetAxis(profile, "throttle", new TswHttpApiAxisBinding
+            {
+                ControlName = throttle.Name,
+                SourceMin = 0,
+                SourceMax = 1,
+                TargetMin = throttle.Name.Contains("Power", StringComparison.OrdinalIgnoreCase)
+                    || throttle.Name.Contains("TractionBrake", StringComparison.OrdinalIgnoreCase)
+                    || throttle.Name.Contains("MasterController", StringComparison.OrdinalIgnoreCase)
+                        ? -1
+                        : 0,
+                TargetMax = 1,
+                SourceNeutral = throttle.Name.Contains("Power", StringComparison.OrdinalIgnoreCase)
+                    || throttle.Name.Contains("TractionBrake", StringComparison.OrdinalIgnoreCase)
+                    || throttle.Name.Contains("MasterController", StringComparison.OrdinalIgnoreCase)
+                        ? 0.5
+                        : null,
+                TargetNeutral = throttle.Name.Contains("Power", StringComparison.OrdinalIgnoreCase)
+                    || throttle.Name.Contains("TractionBrake", StringComparison.OrdinalIgnoreCase)
+                    || throttle.Name.Contains("MasterController", StringComparison.OrdinalIgnoreCase)
+                        ? 0
+                        : null
+            });
+        }
+
+        var horn = byId("Horn");
+        mapped += SetMomentary(profile, "horn", horn?.Name, 250, NeutralReleaseValue(horn));
+        if (byId("MasterSwitch") is { } masterSwitch)
+        {
+            mapped += SetSequence(profile, "master_key_slide", [new TswHttpApiButtonStep
+            {
+                ControlName = masterSwitch.Name,
+                Value = 1,
+                HoldMs = 0,
+                DelayAfterMs = 40
+            }]);
+        }
+
+        mapped += SetMomentary(profile, "bell", byId("Bell")?.Name, 140);
+        mapped += SetMomentary(profile, "guard_buzzer", byId("Bell")?.Name, 140);
+        mapped += SetMomentary(profile, "aws_reset", byId("AWS_Reset")?.Name, 120);
+        mapped += SetMomentary(profile, "alerter", byId("AWS_Reset")?.Name ?? byId("Alerter")?.Name, 120);
+        mapped += SetMomentary(profile, "sander", byId("Sand")?.Name, 250);
+        if (FindWiperControl(controls) is { } wiperControl)
+        {
+            mapped += IsWiperCycleControl(wiperControl.Name)
+                ? SetCycle(profile, "wipers", wiperControl.Name, [0, 0.5, 1])
+                : SetMomentary(profile, "wipers", wiperControl.Name, 100);
+        }
+        mapped += SetMomentary(profile, "dra", byId("DRA_Reset")?.Name, 120);
+        var tailLight = byId("HeadlightsBack")
+            ?? controls.FirstOrDefault(control =>
+                control.Name.Contains("TailLight", StringComparison.OrdinalIgnoreCase)
+                || control.Name.Contains("TailLights", StringComparison.OrdinalIgnoreCase)
+                || control.Name.Contains("MarkerLight", StringComparison.OrdinalIgnoreCase)
+                || control.Name.Contains("MarkerLights", StringComparison.OrdinalIgnoreCase)
+                || control.Name.Contains("HeadMarker", StringComparison.OrdinalIgnoreCase));
+        mapped += SetMomentary(profile, "tail_lights", tailLight?.Name, 120);
+        mapped += SetMomentary(profile, "marker_lights", tailLight?.Name, 120);
+        mapped += SetMomentary(profile, "ditch_lights", byId("DitchLights")?.Name, 120);
+        mapped += SetMomentary(profile, "cab_light", byId("CabLights")?.Name, 120);
+        mapped += SetMomentary(profile, "gauge_light", byId("GaugeLights")?.Name, 120);
+        mapped += SetMomentary(profile, "couple", byId("CoupleButton")?.Name, 140);
+        mapped += SetMomentary(profile, "uncouple", byId("UncoupleButton")?.Name, 140);
+
+        mapped += SetMomentary(profile, "door_left", FindDoorControl(controls, "L", release: true), 140);
+        mapped += SetMomentary(profile, "door_right", FindDoorControl(controls, "R", release: true), 140);
+        mapped += SetMomentary(profile, "door_close_left", FindDoorControl(controls, "L", release: false), 140);
+        mapped += SetMomentary(profile, "door_close_right", FindDoorControl(controls, "R", release: false), 140);
+
+        var allRelease = new[] { byName("DoorAllRelease_L")?.Name, byName("DoorAllRelease_R")?.Name }
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Cast<string>()
+            .ToArray();
+        mapped += SetMomentarySequence(profile, "door_release", allRelease, 140);
+
+        var panUpShoesDown = byName("PanUpShoesDown")?.Name;
+        mapped += SetPowerChangeover(profile, "power_change_ctrl", byName("CTRL_Button")?.Name, panUpShoesDown);
+        mapped += SetPowerChangeover(profile, "power_change_dc", byName("DC_Button")?.Name, panUpShoesDown);
+
+        var engineControls = allById("EngineStartStop");
+        mapped += SetMomentary(profile, "engine_start", engineControls.FirstOrDefault(
+            control => control.Name.Contains("On", StringComparison.OrdinalIgnoreCase)
+                || control.Name.Contains("Start", StringComparison.OrdinalIgnoreCase))?.Name, 140);
+        mapped += SetMomentary(profile, "engine_stop", engineControls.FirstOrDefault(
+            control => control.Name.Contains("Off", StringComparison.OrdinalIgnoreCase)
+                || control.Name.Contains("Stop", StringComparison.OrdinalIgnoreCase))?.Name, 140);
+
+        var breakerControls = allById("CircuitBreaker");
+        mapped += SetMomentary(profile, "mcb_close", breakerControls.FirstOrDefault(
+            control => control.Name.Contains("MCB", StringComparison.OrdinalIgnoreCase)
+                && control.Name.Contains("Close", StringComparison.OrdinalIgnoreCase))?.Name, 140);
+        mapped += SetMomentary(profile, "mcb_open", breakerControls.FirstOrDefault(
+            control => control.Name.Contains("MCB", StringComparison.OrdinalIgnoreCase)
+                && control.Name.Contains("Open", StringComparison.OrdinalIgnoreCase))?.Name, 140);
+        mapped += SetMomentary(profile, "vcb_close", breakerControls.FirstOrDefault(
+            control => control.Name.Contains("VCB", StringComparison.OrdinalIgnoreCase)
+                && control.Name.Contains("Close", StringComparison.OrdinalIgnoreCase))?.Name, 140);
+        mapped += SetMomentary(profile, "vcb_open", breakerControls.FirstOrDefault(
+            control => control.Name.Contains("VCB", StringComparison.OrdinalIgnoreCase)
+                && control.Name.Contains("Open", StringComparison.OrdinalIgnoreCase))?.Name, 140);
+
+        var emergencyBrake = allById("EmergencyBrake").Select(control => control.Name).ToArray();
+        if (emergencyBrake.Length > 0)
+        {
+            mapped += SetSequence(profile, "emergency_reset", emergencyBrake.Select(name => new TswHttpApiButtonStep
+            {
+                ControlName = name,
+                Value = 0,
+                HoldMs = 0,
+                DelayAfterMs = 40
+            }));
+        }
+
+        return mapped;
+    }
+
+    private static TswCabControlSnapshot? FindWiperControl(IReadOnlyList<TswCabControlSnapshot> controls)
+    {
+        return controls.FirstOrDefault(control =>
+                string.Equals(control.Identifier, "Wipers", StringComparison.OrdinalIgnoreCase)
+                && IsWiperCycleControl(control.Name))
+            ?? controls.FirstOrDefault(control =>
+                string.Equals(control.Identifier, "Wipers", StringComparison.OrdinalIgnoreCase)
+                && !control.Name.Contains("Wash", StringComparison.OrdinalIgnoreCase))
+            ?? controls.FirstOrDefault(control =>
+                string.Equals(control.Identifier, "WipersAlt", StringComparison.OrdinalIgnoreCase)
+                && IsWiperCycleControl(control.Name))
+            ?? controls.FirstOrDefault(control => IsWiperCycleControl(control.Name));
+    }
+
+    private static bool IsWiperCycleControl(string name)
+    {
+        return name.Contains("WiperControls", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("WiperControl", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("WiperSpeed", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("WiperMode", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static double NeutralReleaseValue(TswCabControlSnapshot? control)
+    {
+        if (control?.InputValue is > 0.05 and < 0.95)
+        {
+            return control.InputValue;
+        }
+
+        return 0;
+    }
+
+    private static int SetAxis(TswHttpApiProfile profile, string control, TswHttpApiAxisBinding binding)
+    {
+        profile.Axes[control] = [binding];
+        return 1;
+    }
+
+    private static string? FindDoorControl(IReadOnlyList<TswCabControlSnapshot> controls, string side, bool release)
+    {
+        var actionNames = release
+            ? new[] { "DoorRelease", "DoorsRelease", "DoorAllRelease", "DoorsAllRelease", "OpenDoors", "OpenDoor" }
+            : ["DoorClose", "DoorsClose", "DoorCloseInterlock", "DoorsCloseInterlock", "CloseDoors", "CloseDoor"];
+
+        foreach (var actionName in actionNames)
+        {
+            var exact = controls.FirstOrDefault(control =>
+                string.Equals(control.Name, $"{actionName}_{side}", StringComparison.OrdinalIgnoreCase));
+            if (exact is not null)
+            {
+                return exact.Name;
+            }
+        }
+
+        var actionText = release ? "Open" : "Close";
+        return controls.FirstOrDefault(control =>
+            control.Name.Contains("PassengerDoor", StringComparison.OrdinalIgnoreCase)
+            && control.Name.Contains(actionText, StringComparison.OrdinalIgnoreCase)
+            && control.Name.EndsWith($"_{side}", StringComparison.OrdinalIgnoreCase))?.Name;
+    }
+
+    private static int SetMomentary(TswHttpApiProfile profile, string command, string? controlName, int holdMs)
+    {
+        return SetMomentary(profile, command, controlName, holdMs, 0);
+    }
+
+    private static int SetMomentary(TswHttpApiProfile profile, string command, string? controlName, int holdMs, double releaseValue)
+    {
+        return string.IsNullOrWhiteSpace(controlName)
+            ? 0
+            : SetMomentarySequence(profile, command, [controlName], holdMs, releaseValue);
+    }
+
+    private static int SetMomentarySequence(TswHttpApiProfile profile, string command, IReadOnlyList<string> controlNames, int holdMs)
+    {
+        return SetMomentarySequence(profile, command, controlNames, holdMs, 0);
+    }
+
+    private static int SetMomentarySequence(TswHttpApiProfile profile, string command, IReadOnlyList<string> controlNames, int holdMs, double releaseValue)
+    {
+        return controlNames.Count == 0
+            ? 0
+            : SetSequence(profile, command, controlNames.Select(controlName => new TswHttpApiButtonStep
+            {
+                ControlName = controlName,
+                Value = 1,
+                ReleaseValue = releaseValue,
+                HoldMs = holdMs,
+                DelayAfterMs = 40
+            }));
+    }
+
+    private static int SetCycle(TswHttpApiProfile profile, string command, string? controlName, IReadOnlyList<double> cycleValues)
+    {
+        return string.IsNullOrWhiteSpace(controlName) || cycleValues.Count == 0
+            ? 0
+            : SetSequence(profile, command, [new TswHttpApiButtonStep
+            {
+                ControlName = controlName,
+                HoldMs = 0,
+                DelayAfterMs = 40,
+                CycleValues = cycleValues.ToList()
+            }]);
+    }
+
+    private static int SetPowerChangeover(
+        TswHttpApiProfile profile,
+        string command,
+        string? powerModeControlName,
+        string? panUpShoesDownControlName)
+    {
+        if (string.IsNullOrWhiteSpace(powerModeControlName)
+            || string.IsNullOrWhiteSpace(panUpShoesDownControlName)
+            || profile.Buttons.ContainsKey(command))
+        {
+            return 0;
+        }
+
+        return SetSequence(profile, command, [
+            new TswHttpApiButtonStep
+            {
+                ControlName = "Reverser",
+                Value = 0.5,
+                HoldMs = 0,
+                DelayAfterMs = 250
+            },
+            new TswHttpApiButtonStep
+            {
+                ControlName = powerModeControlName,
+                Value = 1,
+                ReleaseValue = 0,
+                HoldMs = 5200,
+                DelayAfterMs = 700
+            },
+            new TswHttpApiButtonStep
+            {
+                ControlName = panUpShoesDownControlName,
+                Value = 1,
+                ReleaseValue = 0,
+                HoldMs = 220,
+                DelayAfterMs = 1200
+            },
+            new TswHttpApiButtonStep
+            {
+                ControlName = panUpShoesDownControlName,
+                Value = 1,
+                ReleaseValue = 0,
+                HoldMs = 220,
+                DelayAfterMs = 80
+            }
+        ]);
+    }
+
+    private static int SetSequence(TswHttpApiProfile profile, string command, IEnumerable<TswHttpApiButtonStep> steps)
+    {
+        var stepList = steps.Where(step => !string.IsNullOrWhiteSpace(step.ControlName)).ToList();
+        if (stepList.Count == 0)
+        {
+            return 0;
+        }
+
+        profile.Buttons[command] = new TswHttpApiButtonBinding { Steps = stepList };
+        return 1;
+    }
+
+    private static void NormalizeDictionaries(TswHttpApiProfile profile)
+    {
+        profile.Axes = new Dictionary<string, List<TswHttpApiAxisBinding>>(profile.Axes, StringComparer.OrdinalIgnoreCase);
+        profile.Buttons = new Dictionary<string, TswHttpApiButtonBinding>(profile.Buttons, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static string MakeProfileId(string actorClass)
+    {
+        var id = Regex.Replace(actorClass.ToLowerInvariant(), "[^a-z0-9]+", "_").Trim('_');
+        return string.IsNullOrWhiteSpace(id) ? "auto_profile" : id;
+    }
+
+    private static string MakeProfileName(string actorClass)
+    {
+        var name = Regex.Replace(actorClass, "^RVM_", "", RegexOptions.IgnoreCase);
+        name = Regex.Replace(name, "_C$", "", RegexOptions.IgnoreCase);
+        name = name.Replace('_', ' ').Replace('-', ' ');
+        name = Regex.Replace(name, @"\s+", " ").Trim();
+        return string.IsNullOrWhiteSpace(name) ? "Auto-mapped TSW profile" : $"Auto {name}";
     }
 }
 
@@ -745,6 +1283,7 @@ internal sealed class TswHttpApiButtonStep
     public int HoldMs { get; set; } = 90;
     public int DelayBeforeMs { get; set; }
     public int DelayAfterMs { get; set; } = 100;
+    public List<double> CycleValues { get; set; } = [];
 }
 
 internal sealed record TswHttpApiAxisOutput(string ControlName, double Value);
@@ -752,7 +1291,8 @@ internal sealed record TswHttpApiAxisCommand(string SourceControl, IReadOnlyList
 {
     public string DisplayControls => string.Join(", ", Outputs.Select(output => output.ControlName));
 }
-internal sealed record TswHttpApiButtonStepCommand(string ControlName, double Value, double? ReleaseValue, int HoldMs, int DelayBeforeMs, int DelayAfterMs);
+internal sealed record TswHttpApiButtonStepCommand(string ControlName, double Value, double? ReleaseValue, int HoldMs, int DelayBeforeMs, int DelayAfterMs, IReadOnlyList<double> CycleValues);
 internal sealed record TswHttpApiButtonCommand(string SourceCommand, IReadOnlyList<TswHttpApiButtonStepCommand> Steps);
 internal sealed record TswHttpApiStatusEventArgs(bool Ready, string Status);
 internal sealed record TswCabControlSnapshot(string Name, double InputValue, double? NormalizedValue, string Identifier);
+internal sealed record TswProfileAutoMapResult(bool Changed, int MappedCount, string Message);

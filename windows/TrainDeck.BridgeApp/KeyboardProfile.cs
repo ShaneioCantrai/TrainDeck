@@ -80,8 +80,11 @@ internal sealed class KeyboardProfile
         defaults.Buttons["pzb_free"] = new KeyBinding("End");
         defaults.Buttons["pzb_override"] = new KeyBinding("Delete");
         defaults.Buttons["lzb"] = new KeyBinding("Ctrl+Enter");
+        defaults.Buttons["afb"] = new KeyBinding("Unassigned");
         defaults.Buttons["afb_on"] = new KeyBinding("Unassigned");
         defaults.Buttons["afb_off"] = new KeyBinding("Unassigned");
+        defaults.Buttons["power_change_ctrl"] = new KeyBinding("Unassigned");
+        defaults.Buttons["power_change_dc"] = new KeyBinding("Unassigned");
         defaults.Buttons["camera_1"] = new KeyBinding("1");
         defaults.Buttons["camera_2"] = new KeyBinding("2");
         defaults.Buttons["camera_3"] = new KeyBinding("3");
@@ -97,9 +100,10 @@ internal sealed class KeyboardProfile
         defaults.Buttons["passenger_lights"] = new KeyBinding("Unassigned");
         defaults.Buttons["destination_sign"] = new KeyBinding("Unassigned");
         defaults.Buttons["dra"] = new KeyBinding("Unassigned");
+        defaults.Buttons["tail_lights"] = new KeyBinding("Unassigned");
         defaults.Buttons["marker_lights"] = new KeyBinding("Unassigned");
         defaults.Buttons["ditch_lights"] = new KeyBinding("Unassigned");
-        defaults.Buttons["master_key"] = new KeyBinding("Unassigned");
+        defaults.Buttons["master_key"] = new KeyBinding("Ctrl+W");
         defaults.Buttons["battery"] = new KeyBinding("Unassigned");
         defaults.Buttons["engine_start"] = new KeyBinding("Unassigned");
         defaults.Buttons["engine_stop"] = new KeyBinding("Unassigned");
@@ -110,6 +114,19 @@ internal sealed class KeyboardProfile
         defaults.Buttons["bail_off"] = new KeyBinding("Unassigned");
         defaults.Buttons["brake_cutout"] = new KeyBinding("Unassigned");
         defaults.Buttons["spare"] = new KeyBinding("Tab");
+        defaults.Buttons["walk_forward"] = new KeyBinding("W");
+        defaults.Buttons["walk_back"] = new KeyBinding("S");
+        defaults.Buttons["walk_left"] = new KeyBinding("Left");
+        defaults.Buttons["walk_right"] = new KeyBinding("Right");
+        defaults.Buttons["walk_sprint"] = new KeyBinding("Shift");
+        defaults.Buttons["walk_crouch"] = new KeyBinding("Ctrl");
+        defaults.Buttons["walk_jump"] = new KeyBinding("Space");
+        defaults.Buttons["walk_interact"] = new KeyBinding("E");
+        defaults.Buttons["walk_escape"] = new KeyBinding("Escape");
+        defaults.Buttons["walk_zoom"] = new KeyBinding("Right");
+        defaults.Buttons["mouse_left"] = new KeyBinding("MouseLeft");
+        defaults.Buttons["mouse_right"] = new KeyBinding("MouseRight");
+        defaults.Buttons["mouse_middle"] = new KeyBinding("MouseMiddle");
         return defaults;
     }
 
@@ -126,7 +143,10 @@ internal sealed class KeyboardProfile
             "couple",
             "uncouple",
             "reset",
-            "spare"
+            "spare",
+            "walk_left",
+            "walk_right",
+            "master_key"
         };
 
         if (!managed.Contains(command))
@@ -139,7 +159,10 @@ internal sealed class KeyboardProfile
             "H",
             "L",
             "M",
-            "Ctrl+C"
+            "Ctrl+C",
+            "A",
+            "D",
+            "Unassigned"
         };
 
         return oldDefaults.Contains(existing.Key) || string.IsNullOrWhiteSpace(existing.Key);

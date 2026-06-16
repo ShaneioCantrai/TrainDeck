@@ -13,6 +13,9 @@ TrainDeck is an unofficial community project. It is not affiliated with or endor
 
 TrainDeck is currently tested against Train Sim World 6. It should be adaptable to Train Sim World 5 where the same HTTP API is available.
 
+See `docs/architecture-roadmap.md` for the broader plan to keep TrainDeck usable
+as a portable train-sim control surface with separate game adapters.
+
 The preferred control path is:
 
 ```text

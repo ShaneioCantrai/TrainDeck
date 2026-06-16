@@ -31,6 +31,15 @@ internal sealed class TrainDeckMessage
 
     [JsonPropertyName("value")]
     public double? Value { get; set; }
+
+    [JsonPropertyName("action")]
+    public string? Action { get; set; }
+
+    [JsonPropertyName("dx")]
+    public double? DeltaX { get; set; }
+
+    [JsonPropertyName("dy")]
+    public double? DeltaY { get; set; }
 }
 
 internal sealed class TrainDeckBridgeMessage
@@ -47,9 +56,23 @@ internal sealed class TrainDeckBridgeMessage
     [JsonPropertyName("reason")]
     public string Reason { get; set; } = "";
 
+    [JsonPropertyName("axes")]
+    public List<string> Axes { get; set; } = [];
+
+    [JsonPropertyName("axisOptions")]
+    public Dictionary<string, List<TrainDeckAxisOption>> AxisOptions { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    [JsonPropertyName("buttons")]
+    public List<string> Buttons { get; set; } = [];
+
     [JsonPropertyName("at")]
     public long At { get; set; }
 }
+
+internal sealed record TrainDeckAxisOption(
+    [property: JsonPropertyName("label")] string Label,
+    [property: JsonPropertyName("value")] double Value,
+    [property: JsonPropertyName("danger")] bool Danger = false);
 
 internal static class JsonOptions
 {

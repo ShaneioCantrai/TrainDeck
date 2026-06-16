@@ -24,6 +24,144 @@
       }
     },
     {
+      "id": "class375_9_se",
+      "name": "Class 375/9 Southeastern",
+      "matchActorClasses": [ "RVM_SEH_SE_Class375-9_DMOS_A_C" ],
+      "matchActorContains": [ "Class375", "Class375-9" ],
+      "axes": {
+        "reverser": [
+          { "controlName": "Reverser", "sourceMin": -1, "sourceMax": 1, "targetMin": 0, "targetMax": 1, "sourceNeutral": 0, "targetNeutral": 0.5 }
+        ],
+        "throttle": [
+          { "controlName": "PowerHandle", "sourceMin": 0, "sourceMax": 1, "targetMin": -1, "targetMax": 1, "sourceNeutral": 0.5, "targetNeutral": 0 }
+        ]
+      },
+      "buttons": {
+        "horn": {
+          "steps": [
+            { "controlName": "Horn", "value": 1, "releaseValue": 0, "holdMs": 250, "delayAfterMs": 40 }
+          ]
+        },
+        "master_key_slide": {
+          "steps": [
+            { "controlName": "MasterKey", "value": 1, "holdMs": 0, "delayAfterMs": 40 }
+          ]
+        },
+        "bell": {
+          "steps": [
+            { "controlName": "SignalBell", "value": 1, "releaseValue": 0, "holdMs": 140, "delayAfterMs": 40 }
+          ]
+        },
+        "guard_buzzer": {
+          "steps": [
+            { "controlName": "SignalBell", "value": 1, "releaseValue": 0, "holdMs": 140, "delayAfterMs": 40 }
+          ]
+        },
+        "aws_reset": {
+          "steps": [
+            { "controlName": "AWS_Button", "value": 1, "releaseValue": 0, "holdMs": 120, "delayAfterMs": 40 }
+          ]
+        },
+        "alerter": {
+          "steps": [
+            { "controlName": "AWS_Button", "value": 1, "releaseValue": 0, "holdMs": 120, "delayAfterMs": 40 }
+          ]
+        },
+        "sander": {
+          "steps": [
+            { "controlName": "Sand", "value": 1, "releaseValue": 0, "holdMs": 250, "delayAfterMs": 40 }
+          ]
+        },
+        "wipers": {
+          "steps": [
+            { "controlName": "Wiper", "value": 1, "releaseValue": 0, "holdMs": 100, "delayAfterMs": 40 }
+          ]
+        },
+        "door_left": {
+          "steps": [
+            { "controlName": "DoorRelease_L", "value": 1, "releaseValue": 0, "holdMs": 140, "delayAfterMs": 40 }
+          ]
+        },
+        "door_right": {
+          "steps": [
+            { "controlName": "DoorRelease_R", "value": 1, "releaseValue": 0, "holdMs": 140, "delayAfterMs": 40 }
+          ]
+        },
+        "door_close_left": {
+          "steps": [
+            { "controlName": "DoorClose_L", "value": 1, "releaseValue": 0, "holdMs": 140, "delayAfterMs": 40 }
+          ]
+        },
+        "door_close_right": {
+          "steps": [
+            { "controlName": "DoorClose_R", "value": 1, "releaseValue": 0, "holdMs": 140, "delayAfterMs": 40 }
+          ]
+        },
+        "door_release": {
+          "steps": [
+            { "controlName": "DoorAllRelease_L", "value": 1, "releaseValue": 0, "holdMs": 140, "delayAfterMs": 40 },
+            { "controlName": "DoorAllRelease_R", "value": 1, "releaseValue": 0, "holdMs": 140, "delayAfterMs": 40 }
+          ]
+        },
+        "dra": {
+          "steps": [
+            { "controlName": "DRA_Button", "value": 1, "releaseValue": 0, "holdMs": 120, "delayAfterMs": 40 }
+          ]
+        },
+        "engine_start": {
+          "steps": [
+            { "controlName": "AuxOn", "value": 1, "releaseValue": 0, "holdMs": 140, "delayAfterMs": 40 }
+          ]
+        },
+        "engine_stop": {
+          "steps": [
+            { "controlName": "AuxOff", "value": 1, "releaseValue": 0, "holdMs": 140, "delayAfterMs": 40 }
+          ]
+        },
+        "mcb_close": {
+          "steps": [
+            { "controlName": "MCB_Close", "value": 1, "releaseValue": 0, "holdMs": 140, "delayAfterMs": 40 }
+          ]
+        },
+        "mcb_open": {
+          "steps": [
+            { "controlName": "MCB_Open", "value": 1, "releaseValue": 0, "holdMs": 140, "delayAfterMs": 40 }
+          ]
+        },
+        "emergency_reset": {
+          "steps": [
+            { "controlName": "EmergencyBrake_L", "value": 0, "holdMs": 0, "delayAfterMs": 40 },
+            { "controlName": "EmergencyBrake_R", "value": 0, "holdMs": 0, "delayAfterMs": 40 }
+          ]
+        },
+        "ditch_lights": {
+          "steps": [
+            { "controlName": "HazardLights", "value": 1, "releaseValue": 0, "holdMs": 120, "delayAfterMs": 40 }
+          ]
+        },
+        "cab_light": {
+          "steps": [
+            { "controlName": "CabLight_L", "value": 1, "releaseValue": 0, "holdMs": 120, "delayAfterMs": 40 }
+          ]
+        },
+        "gauge_light": {
+          "steps": [
+            { "controlName": "NoticeboardLight", "value": 1, "releaseValue": 0, "holdMs": 120, "delayAfterMs": 40 }
+          ]
+        },
+        "couple": {
+          "steps": [
+            { "controlName": "Couple", "value": 1, "releaseValue": 0, "holdMs": 140, "delayAfterMs": 40 }
+          ]
+        },
+        "uncouple": {
+          "steps": [
+            { "controlName": "Uncouple", "value": 1, "releaseValue": 0, "holdMs": 140, "delayAfterMs": 40 }
+          ]
+        }
+      }
+    },
+    {
       "id": "sng3_sprinter",
       "name": "SNG3 - mABk / Sprinter",
       "matchActorClasses": [ "RVM_ZGN_NS_SNG3_Cab_mABk_C" ],

@@ -9,6 +9,13 @@ internal static class KeyboardOutput
     private const uint KeyEventKeyUp = 0x0002;
     private const uint KeyEventScanCode = 0x0008;
     private const uint MapVkToVsc = 0;
+    private const uint MouseEventMove = 0x0001;
+    private const uint MouseEventLeftDown = 0x0002;
+    private const uint MouseEventLeftUp = 0x0004;
+    private const uint MouseEventRightDown = 0x0008;
+    private const uint MouseEventRightUp = 0x0010;
+    private const uint MouseEventMiddleDown = 0x0020;
+    private const uint MouseEventMiddleUp = 0x0040;
 
     private static readonly Dictionary<string, byte> VirtualKeys = BuildVirtualKeys();
     private static readonly HashSet<byte> ExtendedKeys =
@@ -53,6 +60,28 @@ internal static class KeyboardOutput
         KeyUp(key);
     }
 
+    public static void MouseMove(int dx, int dy)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            LastSummary = $"mouse move {dx},{dy}: skipped, not Windows";
+            return;
+        }
+
+        var sent = SendMouse(dx, dy, MouseEventMove);
+        LastSummary = $"mouse move {dx},{dy}: sent={sent}";
+    }
+
+    public static void MouseButtonDown(string button)
+    {
+        SendMouseButton(button, keyUp: false);
+    }
+
+    public static void MouseButtonUp(string button)
+    {
+        SendMouseButton(button, keyUp: true);
+    }
+
     private static string SendSingle(string key, bool keyUp)
     {
         if (!OperatingSystem.IsWindows())
@@ -91,6 +120,54 @@ internal static class KeyboardOutput
         var sent = SendInput(1, [input], Marshal.SizeOf<Input>());
         var error = sent == 1 ? 0 : Marshal.GetLastWin32Error();
         return $"{key} {(keyUp ? "up" : "down")}: vk=0x{vk:X2} scan=0x{scan:X2} sent={sent} err={error}";
+    }
+
+    private static void SendMouseButton(string button, bool keyUp)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            LastSummary = $"mouse {button} {(keyUp ? "up" : "down")}: skipped, not Windows";
+            return;
+        }
+
+        var flags = button.ToLowerInvariant() switch
+        {
+            "left" => keyUp ? MouseEventLeftUp : MouseEventLeftDown,
+            "right" => keyUp ? MouseEventRightUp : MouseEventRightDown,
+            "middle" => keyUp ? MouseEventMiddleUp : MouseEventMiddleDown,
+            _ => 0U
+        };
+
+        if (flags == 0)
+        {
+            LastSummary = $"mouse {button} {(keyUp ? "up" : "down")}: unknown button";
+            return;
+        }
+
+        var sent = SendMouse(0, 0, flags);
+        LastSummary = $"mouse {button} {(keyUp ? "up" : "down")}: sent={sent}";
+    }
+
+    private static uint SendMouse(int dx, int dy, uint flags)
+    {
+        var input = new Input
+        {
+            Type = 0,
+            Data = new InputUnion
+            {
+                Mouse = new MouseInput
+                {
+                    X = dx,
+                    Y = dy,
+                    MouseData = 0,
+                    Flags = flags,
+                    Time = 0,
+                    ExtraInfo = UIntPtr.Zero
+                }
+            }
+        };
+
+        return SendInput(1, [input], Marshal.SizeOf<Input>());
     }
 
     private static Dictionary<string, byte> BuildVirtualKeys()

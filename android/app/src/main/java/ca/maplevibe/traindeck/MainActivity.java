@@ -14,7 +14,13 @@ import android.widget.LinearLayout;
 
 import org.json.JSONObject;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 
 public class MainActivity extends Activity implements TrainDeckView.Callback {
     private static final String PREFS = "TrainDeckPrefs";
@@ -89,6 +95,18 @@ public class MainActivity extends Activity implements TrainDeckView.Callback {
     }
 
     @Override
+    public void onPointerMoved(float dx, float dy) {
+        try {
+            JSONObject payload = base("pointer");
+            payload.put("action", "move");
+            payload.put("dx", Double.parseDouble(String.format(Locale.US, "%.2f", dx)));
+            payload.put("dy", Double.parseDouble(String.format(Locale.US, "%.2f", dy)));
+            udp.send(payload);
+        } catch (Exception ignored) {
+        }
+    }
+
+    @Override
     public void onEditButton(int index, DeckProfile.ButtonDef button) {
         showButtonEditor(index, button);
     }
@@ -102,6 +120,26 @@ public class MainActivity extends Activity implements TrainDeckView.Callback {
     @Override
     public void onSettingsRequested() {
         showTargetEditor();
+    }
+
+    @Override
+    public void onMenuRequested() {
+        showAppMenu();
+    }
+
+    private void showAppMenu() {
+        new AlertDialog.Builder(this)
+                .setTitle("TrainDeck")
+                .setItems(new CharSequence[]{"Options", "Quit"}, (dialog, which) -> {
+                    if (which == 0) {
+                        showTargetEditor();
+                    } else if (which == 1) {
+                        finishAndRemoveTask();
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .setOnDismissListener(dialog -> hideSystemUi())
+                .show();
     }
 
     private void showButtonEditor(int index, DeckProfile.ButtonDef button) {
@@ -209,7 +247,67 @@ public class MainActivity extends Activity implements TrainDeckView.Callback {
         if ("reset_axes".equalsIgnoreCase(type)) {
             String reason = message.optString("reason");
             runOnUiThread(() -> deckView.resetAxesFromBridge(reason));
+        } else if ("capabilities".equalsIgnoreCase(type)) {
+            Set<String> axes = readStringSet(message.optJSONArray("axes"));
+            Set<String> buttons = readStringSet(message.optJSONArray("buttons"));
+            Map<String, List<TrainDeckView.AxisOption>> axisOptions = readAxisOptions(message.optJSONObject("axisOptions"));
+            runOnUiThread(() -> deckView.setCapabilities(axes, buttons, axisOptions));
         }
+    }
+
+    private static Map<String, List<TrainDeckView.AxisOption>> readAxisOptions(JSONObject object) {
+        Map<String, List<TrainDeckView.AxisOption>> values = new HashMap<>();
+        if (object == null) {
+            return values;
+        }
+
+        java.util.Iterator<String> keys = object.keys();
+        while (keys.hasNext()) {
+            String control = keys.next();
+            org.json.JSONArray array = object.optJSONArray(control);
+            if (array == null) {
+                continue;
+            }
+
+            List<TrainDeckView.AxisOption> options = new ArrayList<>();
+            for (int i = 0; i < array.length(); i++) {
+                JSONObject item = array.optJSONObject(i);
+                if (item == null) {
+                    continue;
+                }
+
+                String label = item.optString("label", "");
+                if (label.isEmpty()) {
+                    continue;
+                }
+
+                options.add(new TrainDeckView.AxisOption(
+                        label,
+                        (float) item.optDouble("value", 0),
+                        item.optBoolean("danger", false)));
+            }
+
+            if (!options.isEmpty()) {
+                values.put(control, options);
+            }
+        }
+
+        return values;
+    }
+
+    private static Set<String> readStringSet(org.json.JSONArray array) {
+        Set<String> values = new HashSet<>();
+        if (array == null) {
+            return values;
+        }
+
+        for (int i = 0; i < array.length(); i++) {
+            String value = array.optString(i, "");
+            if (!value.isEmpty()) {
+                values.add(value);
+            }
+        }
+        return values;
     }
 
     private JSONObject base(String type) throws Exception {

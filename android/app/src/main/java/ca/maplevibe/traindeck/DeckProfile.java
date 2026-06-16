@@ -134,6 +134,7 @@ public final class DeckProfile {
                 new ButtonDef("Sander", "sander"),
                 new ButtonDef("Wipers", "wipers"),
                 new ButtonDef("Headlights", "headlights"),
+                new ButtonDef("Tail Light", "tail_lights"),
                 new ButtonDef("Cab Light", "cab_light"),
                 new ButtonDef("Gauge Light", "gauge_light"),
                 new ButtonDef("Door L", "door_left"),
@@ -175,7 +176,7 @@ public final class DeckProfile {
                 new ButtonDef("Map", "map"),
                 new ButtonDef("Pause", "pause"),
                 new ButtonDef("DRA", "dra"),
-                new ButtonDef("Marker Lt", "marker_lights"),
+                new ButtonDef("Tail Light", "tail_lights"),
                 new ButtonDef("Ditch Lt", "ditch_lights"),
                 new ButtonDef("Spare", "spare")
         )));
@@ -195,14 +196,39 @@ public final class DeckProfile {
                 new ButtonDef("PZB Befehl", "pzb_override"),
                 new ButtonDef("LZB", "lzb"),
                 new ButtonDef("SIFA", "sifa_reset"),
-                new ButtonDef("AFB On", "afb_on"),
-                new ButtonDef("AFB Off", "afb_off"),
+                new ButtonDef("AFB", "afb"),
                 new ButtonDef("Bail Off", "bail_off"),
                 new ButtonDef("Brake Cutout", "brake_cutout"),
                 new ButtonDef("Parking Brk", "parking_brake"),
                 new ButtonDef("DRA", "dra"),
                 new ButtonDef("Emerg Reset", "emergency_reset"),
                 new ButtonDef("Reset", "reset"),
+                new ButtonDef("Spare", "spare")
+        )));
+        profile.pages.add(new PageDef("Easy", buttons(
+                new ButtonDef("395 to CTRL", "power_change_ctrl"),
+                new ButtonDef("395 to DC", "power_change_dc"),
+                new ButtonDef("AFB", "afb"),
+                new ButtonDef("Door L", "door_left"),
+                new ButtonDef("Door R", "door_right"),
+                new ButtonDef("DRA", "dra"),
+                new ButtonDef("AWS Reset", "aws_reset"),
+                new ButtonDef("Cab Light", "cab_light"),
+                new ButtonDef("Master Key", "master_key"),
+                new ButtonDef("Panto Up", "pantograph_up"),
+                new ButtonDef("Panto Down", "pantograph_down"),
+                new ButtonDef("MCB Close", "mcb_close"),
+                new ButtonDef("Gauge Light", "gauge_light"),
+                new ButtonDef("Headlights", "headlights"),
+                new ButtonDef("Tail Light", "tail_lights"),
+                new ButtonDef("Wipers", "wipers"),
+                new ButtonDef("Horn", "horn"),
+                new ButtonDef("Sander", "sander"),
+                new ButtonDef("Map", "map"),
+                new ButtonDef("Pause", "pause"),
+                new ButtonDef("Camera 1", "camera_1"),
+                new ButtonDef("Camera 2", "camera_2"),
+                new ButtonDef("Emerg Reset", "emergency_reset"),
                 new ButtonDef("Spare", "spare")
         )));
         return profile;
@@ -229,6 +255,8 @@ public final class DeckProfile {
             profile.pages.addAll(defaults.pages);
         }
         for (PageDef page : profile.pages) {
+            collapseAfbPair(page);
+            ensureTailLight(page);
             while (page.buttons.size() < BUTTON_COUNT) {
                 int next = page.buttons.size() + 1;
                 page.buttons.add(new ButtonDef("Button " + next, "button_" + next));
@@ -236,6 +264,48 @@ public final class DeckProfile {
             while (page.buttons.size() > BUTTON_COUNT) {
                 page.buttons.remove(page.buttons.size() - 1);
             }
+        }
+    }
+
+    private static void ensureTailLight(PageDef page) {
+        if (!"Driver".equals(page.label) && !"Conductor".equals(page.label) && !"Easy".equals(page.label)) {
+            return;
+        }
+
+        for (ButtonDef button : page.buttons) {
+            if ("tail_lights".equals(button.command)) {
+                return;
+            }
+            if ("marker_lights".equals(button.command)) {
+                button.label = "Tail Light";
+                button.command = "tail_lights";
+                return;
+            }
+        }
+
+        for (ButtonDef button : page.buttons) {
+            if ("spare".equals(button.command) || button.command.startsWith("button_")) {
+                button.label = "Tail Light";
+                button.command = "tail_lights";
+                return;
+            }
+        }
+    }
+
+    private static void collapseAfbPair(PageDef page) {
+        for (int i = 0; i < page.buttons.size() - 1; i++) {
+            ButtonDef current = page.buttons.get(i);
+            ButtonDef next = page.buttons.get(i + 1);
+            boolean onThenOff = "afb_on".equals(current.command) && "afb_off".equals(next.command);
+            boolean offThenOn = "afb_off".equals(current.command) && "afb_on".equals(next.command);
+            if (!onThenOff && !offThenOn) {
+                continue;
+            }
+
+            page.buttons.set(i, new ButtonDef("AFB", "afb"));
+            page.buttons.remove(i + 1);
+            page.buttons.add(new ButtonDef("Spare", "spare"));
+            return;
         }
     }
 

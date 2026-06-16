@@ -31,6 +31,12 @@ Default port: `47331`.
 
 `state` is `down` or `up`.
 
+Known high-level button commands include normal controls such as `horn`,
+combo/toggle controls such as `door_left`, `door_right`, and `afb`, explicit
+halves such as `afb_on` and `afb_off`, plus API-backed helper macros such as
+`power_change_ctrl` and `power_change_dc` for the Class 395 power changeover
+sequence.
+
 ## Axis
 
 ```json
@@ -48,6 +54,22 @@ Axis `value` is normalized:
 
 - `0.0` to `1.0` for ordinary levers.
 - `-1.0` to `1.0` for reverser-style controls.
+
+## Pointer
+
+```json
+{
+  "app": "TrainDeck",
+  "version": 1,
+  "type": "pointer",
+  "action": "move",
+  "dx": 12.5,
+  "dy": -4.0,
+  "at": 17823499123
+}
+```
+
+Pointer deltas are relative mouse movement from the walk deck touchpad.
 
 ## Bridge Commands
 
@@ -68,3 +90,21 @@ seen in the latest tablet packet.
 
 The tablet resets local lever positions to their safe defaults. For the combined
 throttle, the safe default is the neutral `N` line.
+
+### Capabilities
+
+```json
+{
+  "app": "TrainDeck",
+  "version": 1,
+  "type": "capabilities",
+  "axes": ["reverser", "throttle"],
+  "buttons": ["door_left", "door_right"],
+  "at": 17823499123
+}
+```
+
+The bridge sends this after a tablet hello and whenever the active TSW API
+profile is ready again. The tablet uses it to disable cab-specific controls that
+are not mapped for the current loco, such as AFB on trains that do not expose
+AFB controls.
