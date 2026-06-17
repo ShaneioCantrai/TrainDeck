@@ -126,10 +126,15 @@ internal sealed class BridgeService : IDisposable
             {
                 break;
             }
+            catch (SocketException ex)
+            {
+                LogWarn($"Receive warning: {ex.Message}");
+                continue;
+            }
             catch (Exception ex)
             {
                 LogError($"Receive error: {ex.Message}");
-                break;
+                continue;
             }
 
             var text = Encoding.UTF8.GetString(result.Buffer);
@@ -155,19 +160,28 @@ internal sealed class BridgeService : IDisposable
             return;
         }
 
+        var endpointChanged = LastRemote is null || !LastRemote.Equals(remote);
         LastRemote = remote;
+        var remoteAdded = false;
         lock (deckRemotesSync)
         {
-            deckRemotes.Add(remote);
+            remoteAdded = deckRemotes.Add(remote);
         }
-        StatusChanged?.Invoke(this, new BridgeStatusEventArgs(IsRunning, Port, LastRemote));
+
+        if (endpointChanged || remoteAdded)
+        {
+            StatusChanged?.Invoke(this, new BridgeStatusEventArgs(IsRunning, Port, LastRemote));
+        }
 
         switch (message.Type)
         {
             case "hello":
-                LogInfo($"Tablet connected: {message.Device ?? remote.Address.ToString()} at {remote.Address}.");
-                _ = SendDeckCapabilitiesAsync();
-                if (!tswApi.IsReady)
+                if (endpointChanged || remoteAdded)
+                {
+                    LogInfo($"Tablet connected: {message.Device ?? remote.Address.ToString()} at {remote.Address}.");
+                    _ = SendDeckCapabilitiesAsync();
+                }
+                if ((endpointChanged || remoteAdded) && !tswApi.IsReady)
                 {
                     ScheduleDeckNeutralize(tswApi.StatusText);
                 }

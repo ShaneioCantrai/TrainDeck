@@ -4,6 +4,8 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.SystemClock;
 import android.text.InputType;
 import android.view.View;
@@ -32,6 +34,14 @@ public class MainActivity extends Activity implements TrainDeckView.Callback {
     private DeckProfile profile;
     private TrainDeckView deckView;
     private UdpDeckClient udp;
+    private final Handler heartbeatHandler = new Handler(Looper.getMainLooper());
+    private final Runnable helloHeartbeat = new Runnable() {
+        @Override
+        public void run() {
+            sendHello();
+            heartbeatHandler.postDelayed(this, 2000L);
+        }
+    };
     private String host;
     private int port;
 
@@ -54,7 +64,19 @@ public class MainActivity extends Activity implements TrainDeckView.Callback {
         deckView.setProfile(profile);
         deckView.setTarget(host, port);
         setContentView(deckView);
-        sendHello();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        heartbeatHandler.removeCallbacks(helloHeartbeat);
+        helloHeartbeat.run();
+    }
+
+    @Override
+    protected void onPause() {
+        heartbeatHandler.removeCallbacks(helloHeartbeat);
+        super.onPause();
     }
 
     @Override

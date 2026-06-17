@@ -559,7 +559,7 @@ internal sealed class TswHttpApiClient : IDisposable
             return null;
         }
 
-        if (property.TryGetDouble(out var direct))
+        if (property.ValueKind == JsonValueKind.Number && property.TryGetDouble(out var direct))
         {
             return direct;
         }
@@ -570,6 +570,7 @@ internal sealed class TswHttpApiClient : IDisposable
     private static double? TryReadDouble(JsonElement parent, string propertyName)
     {
         return parent.TryGetProperty(propertyName, out var property)
+            && property.ValueKind == JsonValueKind.Number
             && property.TryGetDouble(out var value)
             ? value
             : null;

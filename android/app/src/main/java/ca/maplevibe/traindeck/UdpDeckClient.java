@@ -1,5 +1,7 @@
 package ca.maplevibe.traindeck;
 
+import android.util.Log;
+
 import org.json.JSONObject;
 
 import java.net.DatagramPacket;
@@ -10,6 +12,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public final class UdpDeckClient implements AutoCloseable {
+    private static final String TAG = "TrainDeckUdp";
+
     public interface Listener {
         void onMessage(JSONObject message);
     }
@@ -53,7 +57,8 @@ public final class UdpDeckClient implements AutoCloseable {
                 InetAddress address = InetAddress.getByName(host.trim());
                 DatagramPacket packet = new DatagramPacket(body, body.length, address, port);
                 socket.send(packet);
-            } catch (Exception ignored) {
+            } catch (Exception ex) {
+                Log.w(TAG, "send failed to " + host + ":" + port, ex);
                 // The UI keeps running even when the bridge is not reachable.
             }
         });
@@ -72,10 +77,11 @@ public final class UdpDeckClient implements AutoCloseable {
                     if (current != null) {
                         current.onMessage(message);
                     }
-                } catch (Exception ignored) {
+                } catch (Exception ex) {
                     if (closed) {
                         return;
                     }
+                    Log.w(TAG, "receive failed", ex);
                 }
             }
         });
