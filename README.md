@@ -46,6 +46,19 @@ Keyboard output remains as a fallback for mapped buttons and for sessions where 
 7. Load into a drivable cab in TSW.
 8. Confirm the bridge says `TSW API: connected`.
 
+## Feedback And Tester Reports
+
+Please use GitHub Issues for bug reports, feature requests, compatibility notes,
+and locomotive profile observations:
+
+```text
+https://github.com/ShaneioCantrai/TrainDeck/issues
+```
+
+Useful tester reports include the Train Sim World version, route, locomotive,
+what worked, what did not, and any bridge log or cab snapshot details requested
+by Maple Vibe Inc.
+
 ## Build Android
 
 Install the Android SDK and ensure `ANDROID_HOME` is set, or use the default SDK location under `%LOCALAPPDATA%\Android\Sdk`.

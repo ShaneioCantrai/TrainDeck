@@ -1,0 +1,52 @@
+name: Compatibility note
+description: Share what worked or did not work for a route, locomotive, or device.
+title: "[Compatibility]: "
+labels:
+  - compatibility
+body:
+  - type: input
+    id: version
+    attributes:
+      label: TrainDeck version
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: tsw-version
+    attributes:
+      label: Train Sim World version
+      placeholder: TSW 6
+    validations:
+      required: true
+  - type: input
+    id: route-loco
+    attributes:
+      label: Route and locomotive
+      placeholder: Route name, locomotive/unit name
+    validations:
+      required: true
+  - type: input
+    id: tablet
+    attributes:
+      label: Tablet or device
+      placeholder: Galaxy Tab, Galaxy Fold, etc.
+    validations:
+      required: false
+  - type: dropdown
+    id: result
+    attributes:
+      label: Overall result
+      options:
+        - Works well
+        - Partially works
+        - Does not work
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: List which levers, buttons, walk controls, or API-backed controls worked.
+    validations:
+      required: true

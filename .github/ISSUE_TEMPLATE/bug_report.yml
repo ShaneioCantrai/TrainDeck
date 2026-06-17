@@ -1,0 +1,58 @@
+name: Bug report
+description: Report something that did not work in TrainDeck.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing TrainDeck. Please include enough detail for us to reproduce the problem.
+  - type: input
+    id: version
+    attributes:
+      label: TrainDeck version
+      description: Use the release version or artifact name, such as 0.1.0.
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: tsw-version
+    attributes:
+      label: Train Sim World version
+      placeholder: TSW 6
+    validations:
+      required: true
+  - type: input
+    id: route-loco
+    attributes:
+      label: Route and locomotive
+      placeholder: Route name, locomotive/unit name
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe what you tried, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start TrainDeck Bridge
+        2. Launch TSW with the HTTP API enabled
+        3. Open TrainDeck on the tablet
+        4. ...
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or cab snapshot
+      description: Paste any relevant bridge log lines or cab snapshot details. Do not include private system details.
+      render: text
+    validations:
+      required: false
