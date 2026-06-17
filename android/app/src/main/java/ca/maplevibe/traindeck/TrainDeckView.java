@@ -1795,11 +1795,17 @@ public final class TrainDeckView extends View {
     }
 
     private float axisTrackBottom(AxisControl axis) {
-        if ("afb".equals(axis.control)) {
+        if ("afb".equals(axis.control) || isBrakeLikeAxis(axis.control)) {
             return axis.rect.bottom - dp(66);
         }
 
         return axis.rect.bottom - dp(34);
+    }
+
+    private static boolean isBrakeLikeAxis(String control) {
+        return "dynamic_brake".equals(control)
+                || "train_brake".equals(control)
+                || "independent_brake".equals(control);
     }
 
     private float axisTrackCenterX(AxisControl axis) {
