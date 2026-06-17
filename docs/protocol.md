@@ -111,3 +111,22 @@ The bridge sends this after a tablet hello and whenever the active TSW API
 profile is ready again. The tablet uses it to disable cab-specific controls that
 are not mapped for the current loco, such as AFB on trains that do not expose
 AFB controls.
+
+### Telemetry
+
+```json
+{
+  "app": "TrainDeck",
+  "version": 1,
+  "type": "telemetry",
+  "speedKmh": 72.5,
+  "speedMph": 45.0,
+  "nextSpeedLimitKmh": 40.0,
+  "nextSpeedLimitDistanceM": 1232.6,
+  "at": 17823499123
+}
+```
+
+Speed telemetry comes from the TSW HTTP API. `nextSpeedLimitKmh` and
+`nextSpeedLimitDistanceM` are omitted when the Driver Aid API does not currently
+report an upcoming speed limit.

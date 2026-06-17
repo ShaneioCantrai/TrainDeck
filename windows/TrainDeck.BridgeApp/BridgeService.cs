@@ -614,11 +614,14 @@ internal sealed class BridgeService : IDisposable
             return;
         }
 
+        var speedLimit = await tswApi.TryGetSpeedLimitTelemetryAsync(token);
         var payload = new TrainDeckBridgeMessage
         {
             Type = "telemetry",
             SpeedKmh = speedKmh.Value,
             SpeedMph = speedKmh.Value * 0.621371,
+            NextSpeedLimitKmh = speedLimit?.NextSpeedLimitKmh,
+            NextSpeedLimitDistanceM = speedLimit?.DistanceMeters,
             At = Environment.TickCount64
         };
 
@@ -730,3 +733,4 @@ internal sealed record BridgeLogEventArgs(string Level, string Message);
 internal sealed record BridgeStatusEventArgs(bool Running, int Port, IPEndPoint? LastRemote);
 internal sealed record AxisLog(double Value, DateTimeOffset At);
 internal sealed record PairedCommand(string ToggleCommand, string PrimaryCommand, string AlternateCommand);
+internal sealed record TswSpeedLimitTelemetry(double NextSpeedLimitKmh, double DistanceMeters);

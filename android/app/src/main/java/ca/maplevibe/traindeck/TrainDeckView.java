@@ -135,6 +135,8 @@ public final class TrainDeckView extends View {
     private boolean capabilitiesKnown = false;
     private float lastAfbValue = 80f / AFB_MAX_SPEED_KMH;
     private float speedKmh = Float.NaN;
+    private float nextSpeedLimitKmh = Float.NaN;
+    private float nextSpeedLimitDistanceM = Float.NaN;
     private long speedUpdatedAt = 0L;
 
     public TrainDeckView(Context context) {
@@ -182,7 +184,13 @@ public final class TrainDeckView extends View {
     }
 
     public void setSpeedKmh(float value) {
-        speedKmh = value;
+        setTelemetry(value, Float.NaN, Float.NaN);
+    }
+
+    public void setTelemetry(float currentSpeedKmh, float upcomingSpeedLimitKmh, float upcomingSpeedLimitDistanceM) {
+        speedKmh = currentSpeedKmh;
+        nextSpeedLimitKmh = upcomingSpeedLimitKmh;
+        nextSpeedLimitDistanceM = upcomingSpeedLimitDistanceM;
         speedUpdatedAt = System.currentTimeMillis();
         invalidate();
     }
@@ -596,12 +604,15 @@ public final class TrainDeckView extends View {
 
     private void drawInfoPill(Canvas canvas, RectF pill, boolean speedPill, int index) {
         boolean fresh = !Float.isNaN(speedKmh) && System.currentTimeMillis() - speedUpdatedAt <= 2500L;
-        paint.setColor(speedPill && fresh ? Color.rgb(34, 57, 45) : Color.rgb(23, 30, 36));
+        boolean nextLimitPill = index == 1;
+        boolean nextLimitFresh = fresh && !Float.isNaN(nextSpeedLimitKmh) && !Float.isNaN(nextSpeedLimitDistanceM);
+        boolean active = (speedPill && fresh) || (nextLimitPill && nextLimitFresh);
+        paint.setColor(active ? Color.rgb(34, 57, 45) : Color.rgb(23, 30, 36));
         canvas.drawRoundRect(pill, dp(8), dp(8), paint);
 
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeWidth(dp(2));
-        paint.setColor(speedPill && fresh ? Color.rgb(73, 160, 120) : Color.rgb(61, 71, 80));
+        paint.setColor(active ? Color.rgb(73, 160, 120) : Color.rgb(61, 71, 80));
         canvas.drawRoundRect(pill, dp(8), dp(8), paint);
         paint.setStyle(Paint.Style.FILL);
 
@@ -617,6 +628,17 @@ public final class TrainDeckView extends View {
             paint.setColor(fresh ? Color.rgb(174, 219, 190) : Color.rgb(126, 136, 146));
             paint.setTextSize(dp(9));
             canvas.drawText("KM/H", pill.centerX(), pill.bottom - dp(8), paint);
+        } else if (nextLimitPill) {
+            paint.setColor(nextLimitFresh ? Color.WHITE : Color.rgb(126, 136, 146));
+            paint.setTextSize(dp(20));
+            paint.setFakeBoldText(true);
+            String value = nextLimitFresh ? String.format(Locale.US, "%.0f", Math.max(0f, nextSpeedLimitKmh)) : "--";
+            canvas.drawText(value, pill.centerX(), pill.centerY() - dp(2), paint);
+            paint.setFakeBoldText(false);
+
+            paint.setColor(nextLimitFresh ? Color.rgb(174, 219, 190) : Color.rgb(126, 136, 146));
+            paint.setTextSize(dp(8));
+            canvas.drawText(nextLimitFresh ? formatDistance(nextSpeedLimitDistanceM) : "NEXT", pill.centerX(), pill.bottom - dp(8), paint);
         } else {
             paint.setColor(Color.rgb(80, 91, 100));
             paint.setTextSize(dp(18));
@@ -625,6 +647,18 @@ public final class TrainDeckView extends View {
             paint.setFakeBoldText(false);
         }
         paint.setTextAlign(Paint.Align.LEFT);
+    }
+
+    private static String formatDistance(float meters) {
+        if (Float.isNaN(meters) || meters < 0f) {
+            return "NEXT";
+        }
+
+        if (meters >= 1000f) {
+            return String.format(Locale.US, "%.1f KM", meters / 1000f);
+        }
+
+        return String.format(Locale.US, "%.0f M", meters);
     }
 
     private List<AxisControl> visibleAxes() {

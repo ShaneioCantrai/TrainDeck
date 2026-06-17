@@ -191,6 +191,47 @@ internal sealed class TswHttpApiClient : IDisposable
         return speedMs is null ? null : Math.Abs(speedMs.Value) * 3.6;
     }
 
+    public async Task<TswSpeedLimitTelemetry?> TryGetSpeedLimitTelemetryAsync(CancellationToken token)
+    {
+        if (!IsReady || string.IsNullOrWhiteSpace(apiKey))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var data = await GetJsonAsync("/get/DriverAid.Data", token);
+            if (!data.RootElement.TryGetProperty("Values", out var values))
+            {
+                return null;
+            }
+
+            if (values.TryGetProperty("nextSpeedLimits", out var limits)
+                && limits.ValueKind == JsonValueKind.Array)
+            {
+                var best = limits
+                    .EnumerateArray()
+                    .Select(TryReadSpeedLimitTelemetry)
+                    .Where(item => item is not null)
+                    .Select(item => item!)
+                    .OrderBy(item => item.DistanceMeters)
+                    .FirstOrDefault();
+                if (best is not null)
+                {
+                    return best;
+                }
+            }
+
+            var speedMs = TryReadSpeedLimitValue(values, "nextSpeedLimit");
+            var distanceCm = TryReadDouble(values, "distanceToNextSpeedLimit");
+            return MakeSpeedLimitTelemetry(speedMs, distanceCm);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private static double NextCycleValue(IReadOnlyList<double> cycleValues, double? current)
     {
         if (cycleValues.Count == 0)
@@ -481,6 +522,57 @@ internal sealed class TswHttpApiClient : IDisposable
         }
 
         return null;
+    }
+
+    private static TswSpeedLimitTelemetry? TryReadSpeedLimitTelemetry(JsonElement item)
+    {
+        var speedMs = TryReadSpeedLimitValue(item, "value");
+        var distanceCm = TryReadDouble(item, "distanceToNextSpeedLimit");
+        return MakeSpeedLimitTelemetry(speedMs, distanceCm);
+    }
+
+    private static TswSpeedLimitTelemetry? MakeSpeedLimitTelemetry(double? speedMs, double? distanceCm)
+    {
+        if (speedMs is null || distanceCm is null)
+        {
+            return null;
+        }
+
+        if (!double.IsFinite(speedMs.Value)
+            || !double.IsFinite(distanceCm.Value)
+            || speedMs.Value < 0
+            || speedMs.Value > 250
+            || distanceCm.Value < 0)
+        {
+            return null;
+        }
+
+        return new TswSpeedLimitTelemetry(
+            speedMs.Value * 3.6,
+            distanceCm.Value / 100.0);
+    }
+
+    private static double? TryReadSpeedLimitValue(JsonElement parent, string propertyName)
+    {
+        if (!parent.TryGetProperty(propertyName, out var property))
+        {
+            return null;
+        }
+
+        if (property.TryGetDouble(out var direct))
+        {
+            return direct;
+        }
+
+        return TryReadDouble(property, "value");
+    }
+
+    private static double? TryReadDouble(JsonElement parent, string propertyName)
+    {
+        return parent.TryGetProperty(propertyName, out var property)
+            && property.TryGetDouble(out var value)
+            ? value
+            : null;
     }
 
     private async Task<string> TryGetIdentifierAsync(string control, CancellationToken token)
