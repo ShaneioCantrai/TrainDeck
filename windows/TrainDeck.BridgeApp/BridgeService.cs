@@ -13,6 +13,10 @@ internal sealed class BridgeService : IDisposable
     private const double SpeedHoldDeadbandKmh = 3.0;
     private const double SpeedHoldMinTargetKmh = 0.0;
     private const double SpeedHoldMaxTargetKmh = 250.0;
+    private const double AutoPilotLimitBufferKmh = 1.0;
+    private const double AutoPilotBrakeDecelMps2 = 0.48;
+    private const double AutoPilotReactionSeconds = 4.0;
+    private const double AutoPilotBrakeMarginMeters = 35.0;
     private static readonly PairedCommand[] PairedCommands =
     [
         new("door_left", "door_left", "door_close_left"),
@@ -31,7 +35,9 @@ internal sealed class BridgeService : IDisposable
     private bool deckNeutralizedSinceApiLost;
     private bool autoAxisSuppressedUntilApiReadyLogged;
     private bool speedHoldArmed;
+    private bool speedHoldAutoPilot;
     private double speedHoldTargetKmh = 80;
+    private double speedHoldCruiseTargetKmh = 80;
     private double speedHoldOutput = SpeedHoldNeutral;
     private string speedHoldMode = "off";
     private string speedHoldLastLog = "";
@@ -316,13 +322,23 @@ internal sealed class BridgeService : IDisposable
         switch (command.ToLowerInvariant())
         {
             case "td_speed_hold_toggle":
-                if (speedHoldArmed)
+                if (speedHoldArmed && !speedHoldAutoPilot)
                 {
                     DisarmSpeedHold("tablet");
                 }
                 else
                 {
-                    ArmSpeedHold(lastTelemetrySpeedKmh ?? speedHoldTargetKmh, "tablet");
+                    ArmSpeedHold(lastTelemetrySpeedKmh ?? speedHoldCruiseTargetKmh, "tablet");
+                }
+                break;
+            case "td_speed_hold_auto_pilot":
+                if (speedHoldArmed && speedHoldAutoPilot)
+                {
+                    DisarmSpeedHold("auto pilot");
+                }
+                else
+                {
+                    ArmSpeedHold(lastTelemetrySpeedKmh ?? speedHoldCruiseTargetKmh, "auto pilot", autoPilot: true);
                 }
                 break;
             case "td_speed_hold_set_current":
@@ -355,6 +371,9 @@ internal sealed class BridgeService : IDisposable
     }
 
     private void ArmSpeedHold(double targetKmh, string reason)
+        => ArmSpeedHold(targetKmh, reason, autoPilot: false);
+
+    private void ArmSpeedHold(double targetKmh, string reason, bool autoPilot)
     {
         if (!tswApi.IsReady || !tswApi.IsAxisMapped("throttle"))
         {
@@ -362,11 +381,13 @@ internal sealed class BridgeService : IDisposable
             return;
         }
 
-        speedHoldTargetKmh = ClampSpeedHoldTarget(targetKmh);
+        speedHoldCruiseTargetKmh = ClampSpeedHoldTarget(targetKmh);
+        speedHoldTargetKmh = speedHoldCruiseTargetKmh;
+        speedHoldAutoPilot = autoPilot;
         speedHoldArmed = true;
-        speedHoldMode = "armed";
+        speedHoldMode = autoPilot ? "auto" : "armed";
         speedHoldOutput = SpeedHoldNeutral;
-        LogSpeedHold($"armed at {speedHoldTargetKmh:0} km/h ({reason})");
+        LogSpeedHold($"{(autoPilot ? "auto pilot armed" : "armed")} at {speedHoldTargetKmh:0} km/h ({reason})");
     }
 
     private void DisarmSpeedHold(string reason, bool neutralize = true)
@@ -377,6 +398,7 @@ internal sealed class BridgeService : IDisposable
         }
 
         speedHoldArmed = false;
+        speedHoldAutoPilot = false;
         speedHoldMode = "off";
         speedHoldOutput = SpeedHoldNeutral;
         LogSpeedHold($"disarmed ({reason})");
@@ -388,7 +410,9 @@ internal sealed class BridgeService : IDisposable
 
     private void SetSpeedHoldTarget(double targetKmh, string reason)
     {
-        speedHoldTargetKmh = ClampSpeedHoldTarget(targetKmh);
+        speedHoldCruiseTargetKmh = ClampSpeedHoldTarget(targetKmh);
+        speedHoldTargetKmh = speedHoldCruiseTargetKmh;
+        speedHoldAutoPilot = false;
         if (!speedHoldArmed)
         {
             ArmSpeedHold(speedHoldTargetKmh, reason);
@@ -400,7 +424,17 @@ internal sealed class BridgeService : IDisposable
 
     private void NudgeSpeedHoldTarget(double deltaKmh)
     {
-        SetSpeedHoldTarget(speedHoldTargetKmh + deltaKmh, deltaKmh > 0 ? $"+{deltaKmh:0}" : $"{deltaKmh:0}");
+        var keepAutoPilot = speedHoldAutoPilot;
+        speedHoldCruiseTargetKmh = ClampSpeedHoldTarget(speedHoldCruiseTargetKmh + deltaKmh);
+        speedHoldTargetKmh = speedHoldCruiseTargetKmh;
+        if (!speedHoldArmed)
+        {
+            ArmSpeedHold(speedHoldCruiseTargetKmh, deltaKmh > 0 ? $"+{deltaKmh:0}" : $"{deltaKmh:0}", autoPilot: keepAutoPilot);
+            return;
+        }
+
+        speedHoldAutoPilot = keepAutoPilot;
+        LogSpeedHold($"target {speedHoldCruiseTargetKmh:0} km/h ({(deltaKmh > 0 ? $"+{deltaKmh:0}" : $"{deltaKmh:0}")})");
     }
 
     private async Task UpdateSpeedHoldAsync(double currentSpeedKmh)
@@ -416,6 +450,11 @@ internal sealed class BridgeService : IDisposable
         {
             DisarmSpeedHold("API unavailable");
             return;
+        }
+
+        if (speedHoldAutoPilot)
+        {
+            speedHoldTargetKmh = CalculateAutoPilotTargetKmh(currentSpeedKmh);
         }
 
         var error = speedHoldTargetKmh - currentSpeedKmh;
@@ -435,16 +474,57 @@ internal sealed class BridgeService : IDisposable
         }
 
         output = Math.Clamp(output, 0.08, 0.86);
-        speedHoldMode = mode;
+        speedHoldMode = speedHoldAutoPilot ? $"auto-{mode}" : mode;
         speedHoldOutput = output;
         await SendSpeedHoldAxisAsync(output);
 
-        var summary = $"{mode}:{speedHoldTargetKmh:0}:{currentSpeedKmh:0}:{output:0.000}";
+        var summary = $"{speedHoldMode}:{speedHoldTargetKmh:0}:{currentSpeedKmh:0}:{output:0.000}";
         if (!string.Equals(summary, speedHoldLastLog, StringComparison.OrdinalIgnoreCase))
         {
             speedHoldLastLog = summary;
-            LogInfo($"TD Hold {mode,-5} target={speedHoldTargetKmh:0} km/h speed={currentSpeedKmh:0.0} km/h throttle={output:0.000}");
+            LogInfo($"TD Hold {speedHoldMode,-10} target={speedHoldTargetKmh:0} km/h speed={currentSpeedKmh:0.0} km/h throttle={output:0.000}");
         }
+    }
+
+    private double CalculateAutoPilotTargetKmh(double currentSpeedKmh)
+    {
+        if (lastTelemetrySpeedLimit is not { } limit)
+        {
+            return speedHoldCruiseTargetKmh;
+        }
+
+        var limitTargetKmh = ClampSpeedHoldTarget(limit.NextSpeedLimitKmh - AutoPilotLimitBufferKmh);
+        if (limitTargetKmh >= speedHoldCruiseTargetKmh)
+        {
+            return speedHoldCruiseTargetKmh;
+        }
+
+        if (currentSpeedKmh <= limitTargetKmh + SpeedHoldDeadbandKmh)
+        {
+            return limitTargetKmh;
+        }
+
+        var brakingDistance = BrakeCurveMeters(currentSpeedKmh, limitTargetKmh);
+        if (limit.DistanceMeters <= brakingDistance)
+        {
+            return limitTargetKmh;
+        }
+
+        return Math.Min(speedHoldCruiseTargetKmh, Math.Max(currentSpeedKmh, limitTargetKmh));
+    }
+
+    private static double BrakeCurveMeters(double currentSpeedKmh, double targetSpeedKmh)
+    {
+        var currentMps = Math.Max(0, currentSpeedKmh / 3.6);
+        var targetMps = Math.Max(0, targetSpeedKmh / 3.6);
+        if (currentMps <= targetMps)
+        {
+            return AutoPilotBrakeMarginMeters;
+        }
+
+        var brakingMeters = ((currentMps * currentMps) - (targetMps * targetMps))
+            / (2 * AutoPilotBrakeDecelMps2);
+        return brakingMeters + currentMps * AutoPilotReactionSeconds + AutoPilotBrakeMarginMeters;
     }
 
     private async Task SendSpeedHoldAxisAsync(double value)
@@ -852,6 +932,7 @@ internal sealed class BridgeService : IDisposable
             NextSpeedLimitKmh = speedLimit?.NextSpeedLimitKmh,
             NextSpeedLimitDistanceM = speedLimit?.DistanceMeters,
             SpeedHoldArmed = speedHoldArmed,
+            SpeedHoldAutoPilot = speedHoldAutoPilot,
             SpeedHoldTargetKmh = speedHoldArmed ? speedHoldTargetKmh : null,
             SpeedHoldOutput = speedHoldArmed ? speedHoldOutput : null,
             SpeedHoldMode = speedHoldMode,
@@ -940,6 +1021,7 @@ internal sealed class BridgeService : IDisposable
             .Where(IsButtonHandledByApi)
             .Concat([
                 "td_speed_hold_toggle",
+                "td_speed_hold_auto_pilot",
                 "td_speed_hold_set_current",
                 "td_speed_hold_set_next",
                 "td_speed_hold_minus_5",

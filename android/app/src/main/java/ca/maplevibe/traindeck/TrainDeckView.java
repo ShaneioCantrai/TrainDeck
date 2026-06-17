@@ -78,6 +78,7 @@ public final class TrainDeckView extends View {
     private final RectF walkTouchpadRect = new RectF();
     private final RectF throttleInfoRect = new RectF();
     private final RectF speedHoldShortcutRect = new RectF();
+    private final RectF speedHoldAutoPilotRect = new RectF();
     private final RectF speedHoldToggleRect = new RectF();
     private final RectF speedHoldCurrentRect = new RectF();
     private final RectF speedHoldNextRect = new RectF();
@@ -148,6 +149,7 @@ public final class TrainDeckView extends View {
     private float nextSpeedLimitKmh = Float.NaN;
     private float nextSpeedLimitDistanceM = Float.NaN;
     private boolean speedHoldArmed = false;
+    private boolean speedHoldAutoPilot = false;
     private float speedHoldTargetKmh = Float.NaN;
     private float speedHoldOutput = Float.NaN;
     private String speedHoldMode = "off";
@@ -198,15 +200,16 @@ public final class TrainDeckView extends View {
     }
 
     public void setSpeedKmh(float value) {
-        setTelemetry(value, Float.NaN, Float.NaN, false, Float.NaN, Float.NaN, "off");
+        setTelemetry(value, Float.NaN, Float.NaN, false, false, Float.NaN, Float.NaN, "off");
     }
 
     public void setTelemetry(float currentSpeedKmh, float upcomingSpeedLimitKmh, float upcomingSpeedLimitDistanceM,
-                             boolean holdArmed, float holdTargetKmh, float holdOutput, String holdMode) {
+                             boolean holdArmed, boolean holdAutoPilot, float holdTargetKmh, float holdOutput, String holdMode) {
         speedKmh = currentSpeedKmh;
         nextSpeedLimitKmh = upcomingSpeedLimitKmh;
         nextSpeedLimitDistanceM = upcomingSpeedLimitDistanceM;
         speedHoldArmed = holdArmed;
+        speedHoldAutoPilot = holdAutoPilot;
         speedHoldTargetKmh = holdTargetKmh;
         speedHoldOutput = holdOutput;
         speedHoldMode = holdMode == null || holdMode.trim().isEmpty() ? "off" : holdMode;
@@ -701,7 +704,8 @@ public final class TrainDeckView extends View {
 
             paint.setColor(speedHoldFresh ? Color.rgb(174, 219, 190) : Color.rgb(126, 136, 146));
             paint.setTextSize(dp(8));
-            canvas.drawText(speedHoldFresh ? speedHoldMode.toUpperCase(Locale.US) : "HOLD", pill.centerX(), pill.bottom - dp(8), paint);
+            canvas.drawText(speedHoldAutoPilot ? "AUTO" : speedHoldFresh ? speedHoldMode.toUpperCase(Locale.US) : "HOLD",
+                    pill.centerX(), pill.bottom - dp(8), paint);
         } else {
             paint.setColor(Color.rgb(80, 91, 100));
             paint.setTextSize(dp(18));
@@ -1152,6 +1156,7 @@ public final class TrainDeckView extends View {
         }
         throttleInfoRect.setEmpty();
         speedHoldShortcutRect.setEmpty();
+        speedHoldAutoPilotRect.setEmpty();
 
         boolean fresh = !Float.isNaN(speedKmh) && System.currentTimeMillis() - speedUpdatedAt <= 2500L;
         float margin = dp(22);
@@ -1171,7 +1176,8 @@ public final class TrainDeckView extends View {
                 nextFresh ? formatDistance(nextSpeedLimitDistanceM) : "LIMIT", nextFresh);
 
         float statusTop = top + metricH + gap;
-        RectF statusRect = new RectF(margin, statusTop, w - margin, statusTop + dp(74));
+        RectF statusRect = new RectF(margin, statusTop, w - margin - dp(374), statusTop + dp(74));
+        speedHoldAutoPilotRect.set(statusRect.right + gap, statusTop, w - margin, statusTop + dp(74));
         paint.setColor(speedHoldArmed ? Color.rgb(34, 57, 45) : Color.rgb(23, 30, 36));
         canvas.drawRoundRect(statusRect, dp(8), dp(8), paint);
         paint.setStyle(Paint.Style.STROKE);
@@ -1183,7 +1189,10 @@ public final class TrainDeckView extends View {
         paint.setFakeBoldText(true);
         paint.setTextSize(dp(21));
         paint.setColor(Color.WHITE);
-        canvas.drawText(speedHoldArmed ? "TD Speed Hold" : "TD Speed Hold Standby", statusRect.left + dp(20), statusRect.top + dp(31), paint);
+        String title = speedHoldAutoPilot
+                ? "TD Auto Pilot"
+                : speedHoldArmed ? "TD Speed Hold" : "TD Speed Hold Standby";
+        canvas.drawText(title, statusRect.left + dp(20), statusRect.top + dp(31), paint);
         paint.setFakeBoldText(false);
         paint.setTextSize(dp(13));
         paint.setColor(speedHoldArmed ? Color.rgb(174, 219, 190) : Color.rgb(126, 136, 146));
@@ -1191,6 +1200,7 @@ public final class TrainDeckView extends View {
                 ? String.format(Locale.US, "%s  output %s", speedHoldMode.toUpperCase(Locale.US), formatSpeedHoldOutput())
                 : "OFF";
         canvas.drawText(status, statusRect.left + dp(20), statusRect.bottom - dp(17), paint);
+        drawAssistButton(canvas, speedHoldAutoPilotRect, speedHoldAutoPilot ? "AUTO ON" : "TD AUTO PILOT", speedHoldAutoPilot, fresh && nextFresh);
 
         float buttonTop = statusRect.bottom + gap;
         float buttonBottom = h - dp(34);
@@ -1716,6 +1726,11 @@ public final class TrainDeckView extends View {
     private boolean handleAssistDown(float x, float y) {
         if (speedHoldToggleRect.contains(x, y)) {
             sendAssistButton("TD Hold", "td_speed_hold_toggle");
+            return true;
+        }
+
+        if (speedHoldAutoPilotRect.contains(x, y)) {
+            sendAssistButton("TD Auto Pilot", "td_speed_hold_auto_pilot");
             return true;
         }
 

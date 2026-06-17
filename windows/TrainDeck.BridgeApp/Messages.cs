@@ -80,6 +80,9 @@ internal sealed class TrainDeckBridgeMessage
     [JsonPropertyName("speedHoldArmed")]
     public bool SpeedHoldArmed { get; set; }
 
+    [JsonPropertyName("speedHoldAutoPilot")]
+    public bool SpeedHoldAutoPilot { get; set; }
+
     [JsonPropertyName("speedHoldTargetKmh")]
     public double? SpeedHoldTargetKmh { get; set; }
 

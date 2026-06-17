@@ -124,6 +124,7 @@ AFB controls.
   "nextSpeedLimitKmh": 40.0,
   "nextSpeedLimitDistanceM": 1232.6,
   "speedHoldArmed": true,
+  "speedHoldAutoPilot": true,
   "speedHoldTargetKmh": 80.0,
   "speedHoldOutput": 0.58,
   "speedHoldMode": "power",
@@ -140,6 +141,7 @@ The tablet can send the following high-level button commands to arm, disarm, and
 adjust it:
 
 - `td_speed_hold_toggle`
+- `td_speed_hold_auto_pilot`
 - `td_speed_hold_set_current`
 - `td_speed_hold_set_next`
 - `td_speed_hold_minus_5`
