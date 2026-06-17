@@ -39,6 +39,7 @@ public final class TrainDeckView extends View {
     private static final long TOUCHPAD_TAP_TIMEOUT_MS = 260L;
     private static final float TOUCHPAD_TAP_SLOP_DP = 12f;
     private static final float TOUCHPAD_SCROLL_SENSITIVITY = 0.42f;
+    private static final String REVERSER_KEY_COMMAND = "reverser_key";
 
     public interface Callback {
         void onButtonDown(int index, DeckProfile.ButtonDef button);
@@ -73,6 +74,7 @@ public final class TrainDeckView extends View {
     private final RectF cabModeRect = new RectF();
     private final RectF walkModeRect = new RectF();
     private final RectF walkTouchpadRect = new RectF();
+    private final RectF throttleInfoRect = new RectF();
     private final RectF[] walkButtonRects = new RectF[12];
     private final RectF[] pageRects = new RectF[4];
     private final RectF[] buttonRects = new RectF[24];
@@ -132,6 +134,8 @@ public final class TrainDeckView extends View {
     private boolean afbEnabled = false;
     private boolean capabilitiesKnown = false;
     private float lastAfbValue = 80f / AFB_MAX_SPEED_KMH;
+    private float speedKmh = Float.NaN;
+    private long speedUpdatedAt = 0L;
 
     public TrainDeckView(Context context) {
         super(context);
@@ -177,6 +181,12 @@ public final class TrainDeckView extends View {
         invalidate();
     }
 
+    public void setSpeedKmh(float value) {
+        speedKmh = value;
+        speedUpdatedAt = System.currentTimeMillis();
+        invalidate();
+    }
+
     public boolean isRearrangeMode() {
         return rearrangeMode;
     }
@@ -218,6 +228,9 @@ public final class TrainDeckView extends View {
         if (!isAfbAvailable()) {
             afbEnabled = false;
             setToggleState("afb", false);
+        }
+        if (!isReverserKeyAvailable()) {
+            toggleStates.remove(REVERSER_KEY_COMMAND);
         }
         if (activeAxis >= 0 && !isAxisAvailable(this.axes[activeAxis].control)) {
             activeAxis = -1;
@@ -531,11 +544,13 @@ public final class TrainDeckView extends View {
         float top = dp(78);
         float bottom = h * 0.55f;
         float gap = dp(12);
+        float infoGap = dp(10);
         float margin = dp(18);
         List<AxisControl> visibleAxes = visibleAxes();
         for (AxisControl axis : axes) {
             axis.rect.setEmpty();
         }
+        throttleInfoRect.setEmpty();
         if (visibleAxes.isEmpty()) {
             return;
         }
@@ -549,10 +564,67 @@ public final class TrainDeckView extends View {
         float left = margin;
         for (AxisControl axis : visibleAxes) {
             float axisW = unitW * axis.weight;
-            axis.rect.set(left, top, left + axisW, bottom);
+            if ("throttle".equals(axis.control) && axisW > dp(190)) {
+                float infoW = Math.min(dp(128), Math.max(dp(96), axisW * 0.24f));
+                axis.rect.set(left, top, left + axisW - infoW - infoGap, bottom);
+                throttleInfoRect.set(axis.rect.right + infoGap, top, left + axisW, bottom);
+            } else {
+                axis.rect.set(left, top, left + axisW, bottom);
+            }
             drawAxis(canvas, axis, activeAxis >= 0 && axes[activeAxis] == axis);
+            if ("throttle".equals(axis.control) && !throttleInfoRect.isEmpty()) {
+                drawThrottleInfoRail(canvas, throttleInfoRect);
+            }
             left += axisW + gap;
         }
+    }
+
+    private void drawThrottleInfoRail(Canvas canvas, RectF rail) {
+        paint.setColor(Color.rgb(31, 36, 41));
+        canvas.drawRoundRect(rail, dp(8), dp(8), paint);
+
+        float pad = dp(10);
+        float gap = dp(8);
+        float pillH = (rail.height() - pad * 2 - gap * 3) / 4f;
+        for (int i = 0; i < 4; i++) {
+            float top = rail.top + pad + i * (pillH + gap);
+            RectF pill = new RectF(rail.left + pad, top, rail.right - pad, top + pillH);
+            boolean speedPill = i == 0;
+            drawInfoPill(canvas, pill, speedPill, i);
+        }
+    }
+
+    private void drawInfoPill(Canvas canvas, RectF pill, boolean speedPill, int index) {
+        boolean fresh = !Float.isNaN(speedKmh) && System.currentTimeMillis() - speedUpdatedAt <= 2500L;
+        paint.setColor(speedPill && fresh ? Color.rgb(34, 57, 45) : Color.rgb(23, 30, 36));
+        canvas.drawRoundRect(pill, dp(8), dp(8), paint);
+
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(dp(2));
+        paint.setColor(speedPill && fresh ? Color.rgb(73, 160, 120) : Color.rgb(61, 71, 80));
+        canvas.drawRoundRect(pill, dp(8), dp(8), paint);
+        paint.setStyle(Paint.Style.FILL);
+
+        paint.setTextAlign(Paint.Align.CENTER);
+        if (speedPill) {
+            paint.setColor(fresh ? Color.WHITE : Color.rgb(126, 136, 146));
+            paint.setTextSize(dp(22));
+            paint.setFakeBoldText(true);
+            String value = fresh ? String.format(Locale.US, "%.0f", Math.max(0f, speedKmh)) : "--";
+            canvas.drawText(value, pill.centerX(), pill.centerY() + dp(2), paint);
+            paint.setFakeBoldText(false);
+
+            paint.setColor(fresh ? Color.rgb(174, 219, 190) : Color.rgb(126, 136, 146));
+            paint.setTextSize(dp(9));
+            canvas.drawText("KM/H", pill.centerX(), pill.bottom - dp(8), paint);
+        } else {
+            paint.setColor(Color.rgb(80, 91, 100));
+            paint.setTextSize(dp(18));
+            paint.setFakeBoldText(true);
+            canvas.drawText("-", pill.centerX(), pill.centerY() + dp(6), paint);
+            paint.setFakeBoldText(false);
+        }
+        paint.setTextAlign(Paint.Align.LEFT);
     }
 
     private List<AxisControl> visibleAxes() {
@@ -686,10 +758,11 @@ public final class TrainDeckView extends View {
         paint.setFakeBoldText(false);
 
         List<AxisOption> options = optionsForAxis(axis);
+        boolean showKeyToggle = isReverserKeyToggleAxis(axis);
         float pad = dp(13);
         float gap = dp(options.size() > 3 ? 6 : 9);
         float top = r.top + dp(42);
-        float bottom = r.bottom - dp(37);
+        float bottom = r.bottom - dp(showKeyToggle ? 82 : 37);
         float buttonH = (bottom - top - gap * (options.size() - 1)) / options.size();
         for (int i = 0; i < axis.optionRects.size(); i++) {
             axis.optionRects.get(i).setEmpty();
@@ -701,6 +774,12 @@ public final class TrainDeckView extends View {
             optionRect.set(r.left + pad, optionTop, r.right - pad, optionTop + buttonH);
             drawStepButton(canvas, optionRect, option.label, isOptionActive(axis, option), unavailable, colorForAxisOption(option));
         }
+        if (showKeyToggle) {
+            axis.keyRect.set(r.left + pad, r.bottom - dp(70), r.right - pad, r.bottom - dp(36));
+            drawReverserKeyToggle(canvas, axis.keyRect, unavailable);
+        } else {
+            axis.keyRect.setEmpty();
+        }
 
         paint.setColor(unavailable ? Color.rgb(126, 136, 146) : Color.rgb(174, 185, 195));
         paint.setTextSize(dp(13));
@@ -708,6 +787,42 @@ public final class TrainDeckView extends View {
                 ? "N/A"
                 : activeOptionLabel(axis);
         canvas.drawText(valueText, r.centerX(), r.bottom - dp(12), paint);
+        paint.setTextAlign(Paint.Align.LEFT);
+    }
+
+    private void drawReverserKeyToggle(Canvas canvas, RectF r, boolean unavailable) {
+        boolean keyIn = toggleStates.getOrDefault(REVERSER_KEY_COMMAND, false);
+        paint.setColor(unavailable
+                ? Color.rgb(18, 23, 28)
+                : keyIn ? Color.rgb(34, 57, 45) : Color.rgb(23, 30, 36));
+        canvas.drawRoundRect(r, dp(8), dp(8), paint);
+
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(dp(2));
+        paint.setColor(unavailable
+                ? Color.rgb(42, 50, 58)
+                : keyIn ? Color.rgb(73, 160, 120) : Color.rgb(61, 71, 80));
+        canvas.drawRoundRect(r, dp(8), dp(8), paint);
+        paint.setStyle(Paint.Style.FILL);
+
+        float box = dp(18);
+        RectF check = new RectF(r.left + dp(12), r.centerY() - box / 2f, r.left + dp(12) + box, r.centerY() + box / 2f);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(dp(2));
+        paint.setColor(unavailable ? Color.rgb(108, 119, 128) : keyIn ? Color.rgb(216, 245, 228) : Color.rgb(174, 185, 195));
+        canvas.drawRoundRect(check, dp(4), dp(4), paint);
+        if (keyIn) {
+            canvas.drawLine(check.left + dp(4), check.centerY(), check.centerX() - dp(1), check.bottom - dp(5), paint);
+            canvas.drawLine(check.centerX() - dp(1), check.bottom - dp(5), check.right - dp(4), check.top + dp(5), paint);
+        }
+        paint.setStyle(Paint.Style.FILL);
+
+        paint.setColor(unavailable ? Color.rgb(108, 119, 128) : Color.rgb(232, 236, 239));
+        paint.setTextSize(dp(13));
+        paint.setFakeBoldText(true);
+        paint.setTextAlign(Paint.Align.LEFT);
+        canvas.drawText(keyIn ? "Key In" : "Key Out", check.right + dp(10), r.centerY() + dp(5), paint);
+        paint.setFakeBoldText(false);
         paint.setTextAlign(Paint.Align.LEFT);
     }
 
@@ -1033,6 +1148,9 @@ public final class TrainDeckView extends View {
             case "engine_stop":
                 setToggleState("engine", false);
                 break;
+            case REVERSER_KEY_COMMAND:
+                setToggleState(REVERSER_KEY_COMMAND, !toggleStates.getOrDefault(REVERSER_KEY_COMMAND, false));
+                break;
             case "power_change_ctrl":
             case "power_change_dc":
                 pulseUntil.put(command, System.currentTimeMillis() + BUTTON_PULSE_MS);
@@ -1078,6 +1196,8 @@ public final class TrainDeckView extends View {
                 return toggleStates.getOrDefault("engine", false);
             case "engine_stop":
                 return toggleStates.containsKey("engine") && !toggleStates.get("engine");
+            case REVERSER_KEY_COMMAND:
+                return toggleStates.getOrDefault(REVERSER_KEY_COMMAND, false);
             default:
                 return false;
         }
@@ -1111,6 +1231,7 @@ public final class TrainDeckView extends View {
                 || "vcb_open".equals(command)
                 || "engine_start".equals(command)
                 || "engine_stop".equals(command)
+                || REVERSER_KEY_COMMAND.equals(command)
                 || "power_change_ctrl".equals(command)
                 || "power_change_dc".equals(command);
     }
@@ -1118,6 +1239,9 @@ public final class TrainDeckView extends View {
     private boolean isCommandAvailable(String command) {
         if ("afb".equals(command) || "afb_on".equals(command) || "afb_off".equals(command)) {
             return isAfbAvailable();
+        }
+        if (REVERSER_KEY_COMMAND.equals(command)) {
+            return isReverserKeyAvailable();
         }
 
         return true;
@@ -1144,6 +1268,14 @@ public final class TrainDeckView extends View {
                 || supportedButtons.contains("afb")
                 || supportedButtons.contains("afb_on")
                 || supportedButtons.contains("afb_off");
+    }
+
+    private boolean isReverserKeyAvailable() {
+        return !capabilitiesKnown || supportedButtons.contains(REVERSER_KEY_COMMAND);
+    }
+
+    private boolean isReverserKeyToggleAxis(AxisControl axis) {
+        return "reverser".equals(axis.control) && isReverserKeyAvailable();
     }
 
     private String buttonBadge(String command, boolean latched, boolean pulsing) {
@@ -1177,6 +1309,8 @@ public final class TrainDeckView extends View {
                 return "RUN";
             case "engine_stop":
                 return "STOP";
+            case REVERSER_KEY_COMMAND:
+                return latched ? "IN" : "OUT";
             case "power_change_ctrl":
                 return "CTRL";
             case "power_change_dc":
@@ -1583,6 +1717,15 @@ public final class TrainDeckView extends View {
     }
 
     private void handleStepAxisTouch(AxisControl axis, float x, float y) {
+        if (isReverserKeyToggleAxis(axis) && axis.keyRect.contains(x, y)) {
+            boolean keyIn = !toggleStates.getOrDefault(REVERSER_KEY_COMMAND, false);
+            setToggleState(REVERSER_KEY_COMMAND, keyIn);
+            sendVirtualButton(keyIn ? "Reverser Key In" : "Reverser Key Out", REVERSER_KEY_COMMAND);
+            performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+            invalidate();
+            return;
+        }
+
         List<AxisOption> options = optionsForAxis(axis);
         for (int i = 0; i < options.size() && i < axis.optionRects.size(); i++) {
             if (axis.optionRects.get(i).contains(x, y)) {
@@ -1813,6 +1956,7 @@ public final class TrainDeckView extends View {
         final int notches;
         final float initialValue;
         final RectF rect = new RectF();
+        final RectF keyRect = new RectF();
         final List<RectF> optionRects = new ArrayList<>();
         final List<AxisOption> defaultOptions = new ArrayList<>();
         float value;

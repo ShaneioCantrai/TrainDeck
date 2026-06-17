@@ -280,6 +280,11 @@ public class MainActivity extends Activity implements TrainDeckView.Callback {
             Set<String> buttons = readStringSet(message.optJSONArray("buttons"));
             Map<String, List<TrainDeckView.AxisOption>> axisOptions = readAxisOptions(message.optJSONObject("axisOptions"));
             runOnUiThread(() -> deckView.setCapabilities(axes, buttons, axisOptions));
+        } else if ("telemetry".equalsIgnoreCase(type)) {
+            double speedKmh = message.optDouble("speedKmh", Double.NaN);
+            if (!Double.isNaN(speedKmh)) {
+                runOnUiThread(() -> deckView.setSpeedKmh((float) speedKmh));
+            }
         }
     }
 

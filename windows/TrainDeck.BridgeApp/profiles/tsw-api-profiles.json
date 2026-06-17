@@ -772,6 +772,13 @@
         "throttle": [
           { "controlName": "MasterController", "sourceMin": 0, "sourceMax": 1, "targetMin": 0.1, "targetMax": 1 }
         ]
+      },
+      "buttons": {
+        "reverser_key": {
+          "steps": [
+            { "controlName": "Reverser", "holdMs": 0, "delayAfterMs": 40, "cycleValues": [0, 0.5] }
+          ]
+        }
       }
     }
   ]

@@ -177,6 +177,20 @@ internal sealed class TswHttpApiClient : IDisposable
         }
     }
 
+    public async Task<double?> TryGetSpeedKmhAsync(CancellationToken token)
+    {
+        if (!IsReady || string.IsNullOrWhiteSpace(apiKey))
+        {
+            return null;
+        }
+
+        var speedMs = await TryGetDoubleValueAsync(
+            "/get/CurrentDrivableActor.Function.HUD_GetSpeed",
+            "Speed (ms)",
+            token);
+        return speedMs is null ? null : Math.Abs(speedMs.Value) * 3.6;
+    }
+
     private static double NextCycleValue(IReadOnlyList<double> cycleValues, double? current)
     {
         if (cycleValues.Count == 0)
@@ -930,6 +944,10 @@ internal sealed class TswHttpApiProfileCatalog
                 SourceNeutral = threePosition || masterControlSwitch ? 0 : null,
                 TargetNeutral = threePosition || masterControlSwitch ? 0.5 : null
             });
+            if (IsCombinedReverserKeyControl(reverser, masterControlSwitch, threePosition))
+            {
+                mapped += SetCycle(profile, "reverser_key", reverser.Name, [0, 0.5]);
+            }
         }
 
         var throttle = byId("Throttle")
@@ -966,7 +984,8 @@ internal sealed class TswHttpApiProfileCatalog
 
         var horn = byId("Horn");
         mapped += SetMomentary(profile, "horn", horn?.Name, 250, NeutralReleaseValue(horn));
-        if (byId("MasterSwitch") is { } masterSwitch)
+        var masterSwitch = byId("MasterSwitch");
+        if (masterSwitch is not null)
         {
             mapped += SetSequence(profile, "master_key_slide", [new TswHttpApiButtonStep
             {
@@ -976,6 +995,7 @@ internal sealed class TswHttpApiProfileCatalog
                 DelayAfterMs = 40
             }]);
         }
+        mapped += SetCycle(profile, "reverser_key", FindReverserKeyControl(controls)?.Name, [0, 1]);
 
         mapped += SetMomentary(profile, "bell", byId("Bell")?.Name, 140);
         mapped += SetMomentary(profile, "guard_buzzer", byId("Bell")?.Name, 140);
@@ -1054,6 +1074,33 @@ internal sealed class TswHttpApiProfileCatalog
         }
 
         return mapped;
+    }
+
+    private static TswCabControlSnapshot? FindReverserKeyControl(IReadOnlyList<TswCabControlSnapshot> controls)
+    {
+        return controls.FirstOrDefault(control =>
+                control.Name.Contains("Reverser", StringComparison.OrdinalIgnoreCase)
+                && control.Name.Contains("Key", StringComparison.OrdinalIgnoreCase))
+            ?? controls.FirstOrDefault(control =>
+                control.Name.Contains("DirectionSelector", StringComparison.OrdinalIgnoreCase)
+                && control.Name.Contains("Key", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(control.Identifier, "Reverser", StringComparison.OrdinalIgnoreCase))
+            ?? controls.FirstOrDefault(control =>
+                control.Name.Contains("Reverser", StringComparison.OrdinalIgnoreCase)
+                && (control.Name.Contains("Lock", StringComparison.OrdinalIgnoreCase)
+                    || control.Name.Contains("Unlock", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private static bool IsCombinedReverserKeyControl(
+        TswCabControlSnapshot reverser,
+        bool masterControlSwitch,
+        bool threePosition)
+    {
+        return !masterControlSwitch
+            && threePosition
+            && string.Equals(reverser.Name, "Reverser", StringComparison.OrdinalIgnoreCase)
+            && (reverser.NormalizedValue is >= 0.32 and <= 0.68
+                || reverser.InputValue is >= 0.35 and <= 0.65);
     }
 
     private static TswCabControlSnapshot? FindWiperControl(IReadOnlyList<TswCabControlSnapshot> controls)

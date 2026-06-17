@@ -65,6 +65,12 @@ internal sealed class TrainDeckBridgeMessage
     [JsonPropertyName("buttons")]
     public List<string> Buttons { get; set; } = [];
 
+    [JsonPropertyName("speedKmh")]
+    public double? SpeedKmh { get; set; }
+
+    [JsonPropertyName("speedMph")]
+    public double? SpeedMph { get; set; }
+
     [JsonPropertyName("at")]
     public long At { get; set; }
 }

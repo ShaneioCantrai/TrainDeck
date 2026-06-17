@@ -8,6 +8,7 @@ namespace TrainDeck.BridgeApp;
 internal sealed class BridgeService : IDisposable
 {
     private static readonly TimeSpan DeckNeutralizeDelay = TimeSpan.FromSeconds(12);
+    private static readonly TimeSpan TelemetryInterval = TimeSpan.FromMilliseconds(500);
     private static readonly PairedCommand[] PairedCommands =
     [
         new("door_left", "door_left", "door_close_left"),
@@ -18,6 +19,8 @@ internal sealed class BridgeService : IDisposable
     private readonly KeyboardProfile profile;
     private readonly Dictionary<string, AxisLog> axisLogState = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, bool> pairedCommandNextAlternate = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<IPEndPoint> deckRemotes = [];
+    private readonly object deckRemotesSync = new();
     private readonly TswAxisMapper axisMapper;
     private readonly TswHttpApiClient tswApi;
     private bool lastAutoTargetActive;
@@ -86,6 +89,7 @@ internal sealed class BridgeService : IDisposable
         StatusChanged?.Invoke(this, new BridgeStatusEventArgs(true, port, LastRemote));
         tswApi.Start();
         _ = Task.Run(() => ReceiveLoopAsync(cts.Token));
+        _ = Task.Run(() => TelemetryLoopAsync(cts.Token));
     }
 
     public void Stop()
@@ -97,6 +101,10 @@ internal sealed class BridgeService : IDisposable
         cts = null;
         CancelDeckNeutralize();
         tswApi.Stop();
+        lock (deckRemotesSync)
+        {
+            deckRemotes.Clear();
+        }
         LogInfo("Bridge stopped.");
         StatusChanged?.Invoke(this, new BridgeStatusEventArgs(false, Port, LastRemote));
     }
@@ -148,6 +156,10 @@ internal sealed class BridgeService : IDisposable
         }
 
         LastRemote = remote;
+        lock (deckRemotesSync)
+        {
+            deckRemotes.Add(remote);
+        }
         StatusChanged?.Invoke(this, new BridgeStatusEventArgs(IsRunning, Port, LastRemote));
 
         switch (message.Type)
@@ -570,6 +582,67 @@ internal sealed class BridgeService : IDisposable
         pendingDeckNeutralizeCts = null;
     }
 
+    private async Task TelemetryLoopAsync(CancellationToken token)
+    {
+        while (!token.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(TelemetryInterval, token);
+                await SendDeckTelemetryAsync(token);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private async Task SendDeckTelemetryAsync(CancellationToken token)
+    {
+        if (udp is null || !tswApi.IsReady)
+        {
+            return;
+        }
+
+        var speedKmh = await tswApi.TryGetSpeedKmhAsync(token);
+        if (speedKmh is null)
+        {
+            return;
+        }
+
+        var payload = new TrainDeckBridgeMessage
+        {
+            Type = "telemetry",
+            SpeedKmh = speedKmh.Value,
+            SpeedMph = speedKmh.Value * 0.621371,
+            At = Environment.TickCount64
+        };
+
+        try
+        {
+            var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload, JsonOptions.Default));
+            foreach (var remote in DeckRemoteSnapshot())
+            {
+                await udp.SendAsync(body, body.Length, remote);
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    private List<IPEndPoint> DeckRemoteSnapshot()
+    {
+        lock (deckRemotesSync)
+        {
+            return deckRemotes.ToList();
+        }
+    }
+
     private async Task SendDeckCommandAsync(string type, string reason)
     {
         if (udp is null || LastRemote is null)
@@ -625,7 +698,8 @@ internal sealed class BridgeService : IDisposable
             "power_change_dc",
             "wipers",
             "tail_lights",
-            "marker_lights"
+            "marker_lights",
+            "reverser_key"
         }
             .Where(IsButtonHandledByApi)
             .ToList();
