@@ -1,6 +1,7 @@
 # TrainDeck
 
-TrainDeck turns an Android tablet into a touchscreen cab controller and button deck for Train Sim World.
+TrainDeck turns an Android tablet into a touchscreen cab controller, button box,
+and driving deck for Train Sim World and other train simulators.
 
 It has two parts:
 
@@ -37,7 +38,13 @@ Keyboard output remains as a fallback for mapped buttons and for sessions where 
 
 ## Quick Start
 
-1. Download `TrainDeckBridgeSetup-*-win-x64.exe` and `TrainDeck-android-*-debug.apk` from the current release artifacts.
+Download the current tester release from:
+
+```text
+https://github.com/ShaneioCantrai/TrainDeck/releases
+```
+
+1. Download `TrainDeckBridgeSetup-*-win-x64.exe` and `TrainDeck-android-*-debug.apk` from the release assets.
 2. Install and start TrainDeck Bridge on Windows.
 3. Press **Set API Launch Opt** in the bridge.
 4. Restart Train Sim World from Steam.
