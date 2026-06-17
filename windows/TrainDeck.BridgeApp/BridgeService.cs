@@ -17,6 +17,10 @@ internal sealed class BridgeService : IDisposable
     private const double AutoPilotBrakeDecelMps2 = 0.48;
     private const double AutoPilotReactionSeconds = 4.0;
     private const double AutoPilotBrakeMarginMeters = 35.0;
+    private const double ScenarioResetStoppedSpeedKmh = 2.0;
+    private const double ScenarioResetSuddenSpeedDropKmh = 8.0;
+    private const double ScenarioResetLimitDistanceJumpMeters = 400.0;
+    private static readonly TimeSpan ScenarioResetCooldown = TimeSpan.FromSeconds(10);
     private static readonly PairedCommand[] PairedCommands =
     [
         new("door_left", "door_left", "door_close_left"),
@@ -43,6 +47,9 @@ internal sealed class BridgeService : IDisposable
     private string speedHoldLastLog = "";
     private double? lastTelemetrySpeedKmh;
     private TswSpeedLimitTelemetry? lastTelemetrySpeedLimit;
+    private double? previousTelemetrySpeedKmh;
+    private TswSpeedLimitTelemetry? previousTelemetrySpeedLimit;
+    private DateTimeOffset lastScenarioResetDetectedAt = DateTimeOffset.MinValue;
     private CancellationTokenSource? pendingDeckNeutralizeCts;
     private CancellationTokenSource? cts;
     private UdpClient? udp;
@@ -921,8 +928,11 @@ internal sealed class BridgeService : IDisposable
         }
 
         var speedLimit = await tswApi.TryGetSpeedLimitTelemetryAsync(token);
+        await DetectScenarioRestartAsync(speedKmh.Value, speedLimit);
         lastTelemetrySpeedKmh = speedKmh.Value;
         lastTelemetrySpeedLimit = speedLimit;
+        previousTelemetrySpeedKmh = speedKmh.Value;
+        previousTelemetrySpeedLimit = speedLimit;
         await UpdateSpeedHoldAsync(speedKmh.Value);
         var payload = new TrainDeckBridgeMessage
         {
@@ -950,6 +960,35 @@ internal sealed class BridgeService : IDisposable
         catch
         {
         }
+    }
+
+    private async Task DetectScenarioRestartAsync(double speedKmh, TswSpeedLimitTelemetry? speedLimit)
+    {
+        if (LastRemote is null || DateTimeOffset.UtcNow - lastScenarioResetDetectedAt < ScenarioResetCooldown)
+        {
+            return;
+        }
+
+        var stoppedAfterSuddenDrop = previousTelemetrySpeedKmh is { } previousSpeed
+            && previousSpeed - speedKmh >= ScenarioResetSuddenSpeedDropKmh
+            && speedKmh <= ScenarioResetStoppedSpeedKmh;
+
+        var nextLimitJumpedBack = speedLimit is { } currentLimit
+            && previousTelemetrySpeedLimit is { } previousLimit
+            && currentLimit.DistanceMeters - previousLimit.DistanceMeters >= ScenarioResetLimitDistanceJumpMeters
+            && speedKmh <= ScenarioResetStoppedSpeedKmh;
+
+        if (!stoppedAfterSuddenDrop && !nextLimitJumpedBack)
+        {
+            return;
+        }
+
+        lastScenarioResetDetectedAt = DateTimeOffset.UtcNow;
+        axisMapper.Reset();
+        pairedCommandNextAlternate.Clear();
+        DisarmSpeedHold("scenario restarted");
+        await SendDeckCommandAsync("reset_axes", "scenario restarted");
+        LogInfo("Scenario restart detected; TrainDeck tablet state reset.");
     }
 
     private List<IPEndPoint> DeckRemoteSnapshot()
