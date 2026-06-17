@@ -14,6 +14,11 @@ internal sealed class BridgeService : IDisposable
     private const double SpeedHoldMinTargetKmh = 0.0;
     private const double SpeedHoldMaxTargetKmh = 250.0;
     private const double AutoPilotLimitBufferKmh = 1.0;
+    private const double AutoPilotDeadbandKmh = 1.0;
+    private const double AutoPilotPowerMax = 0.98;
+    private const double AutoPilotPowerBase = 0.18;
+    private const double AutoPilotPowerGain = 0.020;
+    private const double AutoPilotPowerRampKmh = 35.0;
     private const double AutoPilotBrakeDecelMps2 = 0.48;
     private const double AutoPilotReactionSeconds = 4.0;
     private const double AutoPilotBrakeMarginMeters = 35.0;
@@ -395,8 +400,9 @@ internal sealed class BridgeService : IDisposable
             return;
         }
 
-        speedHoldCruiseTargetKmh = ClampSpeedHoldTarget(targetKmh);
-        speedHoldTargetKmh = speedHoldCruiseTargetKmh;
+        var requestedTarget = ClampSpeedHoldTarget(targetKmh);
+        speedHoldCruiseTargetKmh = autoPilot ? SpeedHoldMaxTargetKmh : requestedTarget;
+        speedHoldTargetKmh = autoPilot ? CalculateAutoPilotTargetKmh(requestedTarget) : speedHoldCruiseTargetKmh;
         speedHoldAutoPilot = autoPilot;
         speedHoldArmed = true;
         speedHoldMode = autoPilot ? "auto" : "armed";
@@ -472,22 +478,25 @@ internal sealed class BridgeService : IDisposable
         }
 
         var error = speedHoldTargetKmh - currentSpeedKmh;
+        var deadband = speedHoldAutoPilot ? AutoPilotDeadbandKmh : SpeedHoldDeadbandKmh;
         var output = SpeedHoldNeutral;
         var mode = "hold";
-        if (error < -SpeedHoldDeadbandKmh)
+        if (error < -deadband)
         {
-            var overspeed = Math.Min(25, Math.Abs(error) - SpeedHoldDeadbandKmh);
+            var overspeed = Math.Min(25, Math.Abs(error) - deadband);
             output = SpeedHoldNeutral - Math.Min(0.38, 0.08 + overspeed * 0.018);
             mode = "brake";
         }
-        else if (error > SpeedHoldDeadbandKmh)
+        else if (error > deadband)
         {
-            var underspeed = Math.Min(30, error - SpeedHoldDeadbandKmh);
-            output = SpeedHoldNeutral + Math.Min(0.34, 0.08 + underspeed * 0.012);
+            var underspeed = Math.Min(speedHoldAutoPilot ? AutoPilotPowerRampKmh : 30, error - deadband);
+            output = speedHoldAutoPilot
+                ? SpeedHoldNeutral + Math.Min(AutoPilotPowerMax - SpeedHoldNeutral, AutoPilotPowerBase + underspeed * AutoPilotPowerGain)
+                : SpeedHoldNeutral + Math.Min(0.34, 0.08 + underspeed * 0.012);
             mode = "power";
         }
 
-        output = Math.Clamp(output, 0.08, 0.86);
+        output = Math.Clamp(output, 0.08, speedHoldAutoPilot ? AutoPilotPowerMax : 0.86);
         speedHoldMode = speedHoldAutoPilot ? $"auto-{mode}" : mode;
         speedHoldOutput = output;
         await SendSpeedHoldAxisAsync(output);
@@ -502,7 +511,9 @@ internal sealed class BridgeService : IDisposable
 
     private double CalculateAutoPilotTargetKmh(double currentSpeedKmh)
     {
-        var target = speedHoldCruiseTargetKmh;
+        var target = lastTelemetrySpeedLimit is null
+            ? Math.Min(speedHoldCruiseTargetKmh, ClampSpeedHoldTarget(currentSpeedKmh))
+            : speedHoldCruiseTargetKmh;
 
         if (lastTelemetrySpeedLimit is { } currentLimit)
         {
@@ -518,11 +529,6 @@ internal sealed class BridgeService : IDisposable
         if (nextTargetKmh >= target)
         {
             return target;
-        }
-
-        if (currentSpeedKmh <= nextTargetKmh + SpeedHoldDeadbandKmh)
-        {
-            return nextTargetKmh;
         }
 
         var brakingDistance = BrakeCurveMeters(currentSpeedKmh, nextTargetKmh);
