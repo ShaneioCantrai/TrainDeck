@@ -66,6 +66,13 @@ Useful tester reports include the Train Sim World version, route, locomotive,
 what worked, what did not, and any bridge log or cab snapshot details requested
 by Maple Vibe Inc.
 
+For general questions, comments, setup discussion, and tester notes that are not
+ready to become an issue, use GitHub Discussions:
+
+```text
+https://github.com/ShaneioCantrai/TrainDeck/discussions
+```
+
 ## Build Android
 
 Install the Android SDK and ensure `ANDROID_HOME` is set, or use the default SDK location under `%LOCALAPPDATA%\Android\Sdk`.
