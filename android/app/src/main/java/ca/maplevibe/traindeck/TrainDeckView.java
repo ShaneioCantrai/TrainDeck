@@ -692,7 +692,7 @@ public final class TrainDeckView extends View {
 
             paint.setColor(nextLimitFresh ? Color.rgb(174, 219, 190) : Color.rgb(126, 136, 146));
             paint.setTextSize(dp(8));
-            canvas.drawText(nextLimitFresh ? formatDistance(nextSpeedLimitDistanceM) : "NEXT", pill.centerX(), pill.bottom - dp(8), paint);
+            canvas.drawText(nextLimitFresh ? formatDistance(nextSpeedLimitDistanceM) : "LIMIT", pill.centerX(), pill.bottom - dp(8), paint);
         } else if (speedHoldPill) {
             speedHoldShortcutRect.set(pill);
             paint.setColor(speedHoldFresh ? Color.WHITE : Color.rgb(126, 136, 146));
@@ -718,7 +718,7 @@ public final class TrainDeckView extends View {
 
     private static String formatDistance(float meters) {
         if (Float.isNaN(meters) || meters < 0f) {
-            return "NEXT";
+            return "LIMIT";
         }
 
         if (meters >= 1000f) {
@@ -1172,7 +1172,7 @@ public final class TrainDeckView extends View {
         drawAssistMetric(canvas, targetRect, "TARGET", speedHoldArmed && !Float.isNaN(speedHoldTargetKmh)
                 ? String.format(Locale.US, "%.0f", speedHoldTargetKmh) : "--", "KM/H", speedHoldArmed);
         boolean nextFresh = fresh && !Float.isNaN(nextSpeedLimitKmh) && !Float.isNaN(nextSpeedLimitDistanceM);
-        drawAssistMetric(canvas, nextRect, "NEXT", nextFresh ? String.format(Locale.US, "%.0f", nextSpeedLimitKmh) : "--",
+        drawAssistMetric(canvas, nextRect, "LIMIT", nextFresh ? String.format(Locale.US, "%.0f", nextSpeedLimitKmh) : "--",
                 nextFresh ? formatDistance(nextSpeedLimitDistanceM) : "LIMIT", nextFresh);
 
         float statusTop = top + metricH + gap;

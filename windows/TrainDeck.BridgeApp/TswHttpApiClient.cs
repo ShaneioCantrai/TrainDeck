@@ -206,25 +206,39 @@ internal sealed class TswHttpApiClient : IDisposable
                 return null;
             }
 
+            var currentLimit = MakeSpeedLimitTelemetry(
+                TryReadSpeedLimitValue(values, "speedLimit")
+                    ?? TryReadSpeedLimitValue(values, "trackMaxSpeed"),
+                0);
+
+            TswSpeedLimitTelemetry? nextLimit = null;
             if (values.TryGetProperty("nextSpeedLimits", out var limits)
                 && limits.ValueKind == JsonValueKind.Array)
             {
-                var best = limits
+                nextLimit = limits
                     .EnumerateArray()
                     .Select(TryReadSpeedLimitTelemetry)
                     .Where(item => item is not null)
                     .Select(item => item!)
                     .OrderBy(item => item.DistanceMeters)
                     .FirstOrDefault();
-                if (best is not null)
-                {
-                    return best;
-                }
             }
 
-            var speedMs = TryReadSpeedLimitValue(values, "nextSpeedLimit");
-            var distanceCm = TryReadDouble(values, "distanceToNextSpeedLimit");
-            return MakeSpeedLimitTelemetry(speedMs, distanceCm);
+            nextLimit ??= MakeSpeedLimitTelemetry(
+                TryReadSpeedLimitValue(values, "nextSpeedLimit"),
+                TryReadDouble(values, "distanceToNextSpeedLimit"));
+
+            if (currentLimit is null)
+            {
+                return nextLimit;
+            }
+
+            if (nextLimit is null || nextLimit.NextSpeedLimitKmh >= currentLimit.NextSpeedLimitKmh)
+            {
+                return currentLimit;
+            }
+
+            return nextLimit;
         }
         catch
         {
