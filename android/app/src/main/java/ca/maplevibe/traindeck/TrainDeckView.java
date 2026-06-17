@@ -34,6 +34,7 @@ public final class TrainDeckView extends View {
     private static final float AFB_STEP_KMH = 10f;
     private static final int MODE_CAB = 0;
     private static final int MODE_WALK = 1;
+    private static final int MODE_ASSIST = 2;
     private static final float POINTER_SENSITIVITY = 1.15f;
     private static final float TOUCHPAD_LONG_PRESS_SLOP_DP = 10f;
     private static final long TOUCHPAD_TAP_TIMEOUT_MS = 260L;
@@ -73,8 +74,17 @@ public final class TrainDeckView extends View {
     private final RectF settingsRect = new RectF();
     private final RectF cabModeRect = new RectF();
     private final RectF walkModeRect = new RectF();
+    private final RectF assistModeRect = new RectF();
     private final RectF walkTouchpadRect = new RectF();
     private final RectF throttleInfoRect = new RectF();
+    private final RectF speedHoldShortcutRect = new RectF();
+    private final RectF speedHoldToggleRect = new RectF();
+    private final RectF speedHoldCurrentRect = new RectF();
+    private final RectF speedHoldNextRect = new RectF();
+    private final RectF speedHoldMinus5Rect = new RectF();
+    private final RectF speedHoldMinus1Rect = new RectF();
+    private final RectF speedHoldPlus1Rect = new RectF();
+    private final RectF speedHoldPlus5Rect = new RectF();
     private final RectF[] walkButtonRects = new RectF[12];
     private final RectF[] pageRects = new RectF[4];
     private final RectF[] buttonRects = new RectF[24];
@@ -137,6 +147,10 @@ public final class TrainDeckView extends View {
     private float speedKmh = Float.NaN;
     private float nextSpeedLimitKmh = Float.NaN;
     private float nextSpeedLimitDistanceM = Float.NaN;
+    private boolean speedHoldArmed = false;
+    private float speedHoldTargetKmh = Float.NaN;
+    private float speedHoldOutput = Float.NaN;
+    private String speedHoldMode = "off";
     private long speedUpdatedAt = 0L;
 
     public TrainDeckView(Context context) {
@@ -184,13 +198,18 @@ public final class TrainDeckView extends View {
     }
 
     public void setSpeedKmh(float value) {
-        setTelemetry(value, Float.NaN, Float.NaN);
+        setTelemetry(value, Float.NaN, Float.NaN, false, Float.NaN, Float.NaN, "off");
     }
 
-    public void setTelemetry(float currentSpeedKmh, float upcomingSpeedLimitKmh, float upcomingSpeedLimitDistanceM) {
+    public void setTelemetry(float currentSpeedKmh, float upcomingSpeedLimitKmh, float upcomingSpeedLimitDistanceM,
+                             boolean holdArmed, float holdTargetKmh, float holdOutput, String holdMode) {
         speedKmh = currentSpeedKmh;
         nextSpeedLimitKmh = upcomingSpeedLimitKmh;
         nextSpeedLimitDistanceM = upcomingSpeedLimitDistanceM;
+        speedHoldArmed = holdArmed;
+        speedHoldTargetKmh = holdTargetKmh;
+        speedHoldOutput = holdOutput;
+        speedHoldMode = holdMode == null || holdMode.trim().isEmpty() ? "off" : holdMode;
         speedUpdatedAt = System.currentTimeMillis();
         invalidate();
     }
@@ -255,6 +274,8 @@ public final class TrainDeckView extends View {
         drawHeader(canvas, w);
         if (deckMode == MODE_WALK) {
             drawWalkDeck(canvas, w, h);
+        } else if (deckMode == MODE_ASSIST) {
+            drawAssistDeck(canvas, w, h);
         } else {
             drawAxes(canvas, w, h);
             drawButtons(canvas, w, h);
@@ -301,6 +322,11 @@ public final class TrainDeckView extends View {
                     return true;
                 }
 
+                if (assistModeRect.contains(x, y)) {
+                    setDeckMode(MODE_ASSIST);
+                    return true;
+                }
+
                 if (rearrangeMode) {
                     int page = hitPage(x, y);
                     if (page >= 0 && profile != null && profile.setActivePage(page)) {
@@ -321,6 +347,15 @@ public final class TrainDeckView extends View {
 
                 if (deckMode == MODE_WALK) {
                     return handleWalkDown(x, y, event.getPointerId(actionIndex));
+                }
+
+                if (deckMode == MODE_ASSIST) {
+                    return handleAssistDown(x, y);
+                }
+
+                if (speedHoldShortcutRect.contains(x, y)) {
+                    setDeckMode(MODE_ASSIST);
+                    return true;
                 }
 
                 int page = hitPage(x, y);
@@ -373,6 +408,10 @@ public final class TrainDeckView extends View {
                 return true;
 
             case MotionEvent.ACTION_MOVE:
+                if (deckMode == MODE_ASSIST) {
+                    return true;
+                }
+
                 if (deckMode == MODE_WALK) {
                     return handleWalkMove(event);
                 }
@@ -407,6 +446,10 @@ public final class TrainDeckView extends View {
                 if (deckMode == MODE_WALK) {
                     handleWalkUp(x, y);
                     releaseWalkControls();
+                    invalidate();
+                    return true;
+                }
+                if (deckMode == MODE_ASSIST) {
                     invalidate();
                     return true;
                 }
@@ -471,8 +514,10 @@ public final class TrainDeckView extends View {
 
         cabModeRect.set(dp(165), dp(9), dp(246), dp(49));
         walkModeRect.set(dp(253), dp(9), dp(334), dp(49));
+        assistModeRect.set(dp(341), dp(9), dp(430), dp(49));
         drawModeButton(canvas, cabModeRect, "Cab", deckMode == MODE_CAB);
         drawModeButton(canvas, walkModeRect, "Walk", deckMode == MODE_WALK);
+        drawModeButton(canvas, assistModeRect, "Assist", deckMode == MODE_ASSIST);
 
         if (deckMode == MODE_CAB) {
             drawPageTabs(canvas, w);
@@ -513,7 +558,7 @@ public final class TrainDeckView extends View {
             return;
         }
 
-        float left = dp(348);
+        float left = dp(444);
         float right = settingsRect.left - dp(14);
         if (right <= left + dp(150)) {
             for (int i = 0; i < pageRects.length; i++) {
@@ -593,6 +638,7 @@ public final class TrainDeckView extends View {
     private void drawThrottleInfoRail(Canvas canvas, RectF rail) {
         paint.setColor(Color.rgb(31, 36, 41));
         canvas.drawRoundRect(rail, dp(8), dp(8), paint);
+        speedHoldShortcutRect.setEmpty();
 
         float pad = dp(10);
         float gap = dp(8);
@@ -608,8 +654,10 @@ public final class TrainDeckView extends View {
     private void drawInfoPill(Canvas canvas, RectF pill, boolean speedPill, int index) {
         boolean fresh = !Float.isNaN(speedKmh) && System.currentTimeMillis() - speedUpdatedAt <= 2500L;
         boolean nextLimitPill = index == 1;
+        boolean speedHoldPill = index == 2;
         boolean nextLimitFresh = fresh && !Float.isNaN(nextSpeedLimitKmh) && !Float.isNaN(nextSpeedLimitDistanceM);
-        boolean active = (speedPill && fresh) || (nextLimitPill && nextLimitFresh);
+        boolean speedHoldFresh = fresh && speedHoldArmed && !Float.isNaN(speedHoldTargetKmh);
+        boolean active = (speedPill && fresh) || (nextLimitPill && nextLimitFresh) || (speedHoldPill && speedHoldFresh);
         paint.setColor(active ? Color.rgb(34, 57, 45) : Color.rgb(23, 30, 36));
         canvas.drawRoundRect(pill, dp(8), dp(8), paint);
 
@@ -642,6 +690,18 @@ public final class TrainDeckView extends View {
             paint.setColor(nextLimitFresh ? Color.rgb(174, 219, 190) : Color.rgb(126, 136, 146));
             paint.setTextSize(dp(8));
             canvas.drawText(nextLimitFresh ? formatDistance(nextSpeedLimitDistanceM) : "NEXT", pill.centerX(), pill.bottom - dp(8), paint);
+        } else if (speedHoldPill) {
+            speedHoldShortcutRect.set(pill);
+            paint.setColor(speedHoldFresh ? Color.WHITE : Color.rgb(126, 136, 146));
+            paint.setTextSize(dp(17));
+            paint.setFakeBoldText(true);
+            String value = speedHoldFresh ? String.format(Locale.US, "%.0f", Math.max(0f, speedHoldTargetKmh)) : "TD";
+            canvas.drawText(value, pill.centerX(), pill.centerY() - dp(2), paint);
+            paint.setFakeBoldText(false);
+
+            paint.setColor(speedHoldFresh ? Color.rgb(174, 219, 190) : Color.rgb(126, 136, 146));
+            paint.setTextSize(dp(8));
+            canvas.drawText(speedHoldFresh ? speedHoldMode.toUpperCase(Locale.US) : "HOLD", pill.centerX(), pill.bottom - dp(8), paint);
         } else {
             paint.setColor(Color.rgb(80, 91, 100));
             paint.setTextSize(dp(18));
@@ -1086,6 +1146,149 @@ public final class TrainDeckView extends View {
         }
     }
 
+    private void drawAssistDeck(Canvas canvas, float w, float h) {
+        for (RectF rect : buttonRects) {
+            rect.setEmpty();
+        }
+        throttleInfoRect.setEmpty();
+        speedHoldShortcutRect.setEmpty();
+
+        boolean fresh = !Float.isNaN(speedKmh) && System.currentTimeMillis() - speedUpdatedAt <= 2500L;
+        float margin = dp(22);
+        float gap = dp(14);
+        float top = dp(82);
+        float metricH = dp(126);
+        float metricW = (w - margin * 2 - gap * 2) / 3f;
+
+        RectF currentRect = new RectF(margin, top, margin + metricW, top + metricH);
+        RectF targetRect = new RectF(currentRect.right + gap, top, currentRect.right + gap + metricW, top + metricH);
+        RectF nextRect = new RectF(targetRect.right + gap, top, w - margin, top + metricH);
+        drawAssistMetric(canvas, currentRect, "CURRENT", fresh ? String.format(Locale.US, "%.0f", Math.max(0f, speedKmh)) : "--", "KM/H", fresh);
+        drawAssistMetric(canvas, targetRect, "TARGET", speedHoldArmed && !Float.isNaN(speedHoldTargetKmh)
+                ? String.format(Locale.US, "%.0f", speedHoldTargetKmh) : "--", "KM/H", speedHoldArmed);
+        boolean nextFresh = fresh && !Float.isNaN(nextSpeedLimitKmh) && !Float.isNaN(nextSpeedLimitDistanceM);
+        drawAssistMetric(canvas, nextRect, "NEXT", nextFresh ? String.format(Locale.US, "%.0f", nextSpeedLimitKmh) : "--",
+                nextFresh ? formatDistance(nextSpeedLimitDistanceM) : "LIMIT", nextFresh);
+
+        float statusTop = top + metricH + gap;
+        RectF statusRect = new RectF(margin, statusTop, w - margin, statusTop + dp(74));
+        paint.setColor(speedHoldArmed ? Color.rgb(34, 57, 45) : Color.rgb(23, 30, 36));
+        canvas.drawRoundRect(statusRect, dp(8), dp(8), paint);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(dp(2));
+        paint.setColor(speedHoldArmed ? Color.rgb(73, 160, 120) : Color.rgb(61, 71, 80));
+        canvas.drawRoundRect(statusRect, dp(8), dp(8), paint);
+        paint.setStyle(Paint.Style.FILL);
+        paint.setTextAlign(Paint.Align.LEFT);
+        paint.setFakeBoldText(true);
+        paint.setTextSize(dp(21));
+        paint.setColor(Color.WHITE);
+        canvas.drawText(speedHoldArmed ? "TD Speed Hold" : "TD Speed Hold Standby", statusRect.left + dp(20), statusRect.top + dp(31), paint);
+        paint.setFakeBoldText(false);
+        paint.setTextSize(dp(13));
+        paint.setColor(speedHoldArmed ? Color.rgb(174, 219, 190) : Color.rgb(126, 136, 146));
+        String status = speedHoldArmed
+                ? String.format(Locale.US, "%s  output %s", speedHoldMode.toUpperCase(Locale.US), formatSpeedHoldOutput())
+                : "OFF";
+        canvas.drawText(status, statusRect.left + dp(20), statusRect.bottom - dp(17), paint);
+
+        float buttonTop = statusRect.bottom + gap;
+        float buttonBottom = h - dp(34);
+        float rowGap = dp(12);
+        float colGap = dp(12);
+        float rowH = (buttonBottom - buttonTop - rowGap * 2) / 3f;
+        float colW = (w - margin * 2 - colGap * 3) / 4f;
+
+        speedHoldToggleRect.set(margin, buttonTop, margin + colW * 2 + colGap, buttonTop + rowH);
+        speedHoldCurrentRect.set(speedHoldToggleRect.right + colGap, buttonTop, speedHoldToggleRect.right + colGap + colW, buttonTop + rowH);
+        speedHoldNextRect.set(speedHoldCurrentRect.right + colGap, buttonTop, w - margin, buttonTop + rowH);
+
+        float row2Top = buttonTop + rowH + rowGap;
+        speedHoldMinus5Rect.set(margin, row2Top, margin + colW, row2Top + rowH);
+        speedHoldMinus1Rect.set(speedHoldMinus5Rect.right + colGap, row2Top, speedHoldMinus5Rect.right + colGap + colW, row2Top + rowH);
+        speedHoldPlus1Rect.set(speedHoldMinus1Rect.right + colGap, row2Top, speedHoldMinus1Rect.right + colGap + colW, row2Top + rowH);
+        speedHoldPlus5Rect.set(speedHoldPlus1Rect.right + colGap, row2Top, w - margin, row2Top + rowH);
+
+        drawAssistButton(canvas, speedHoldToggleRect, speedHoldArmed ? "DISARM" : "ARM", speedHoldArmed, fresh);
+        drawAssistButton(canvas, speedHoldCurrentRect, "SET CURRENT", false, fresh);
+        drawAssistButton(canvas, speedHoldNextRect, "SET NEXT", false, nextFresh);
+        drawAssistButton(canvas, speedHoldMinus5Rect, "-5", false, true);
+        drawAssistButton(canvas, speedHoldMinus1Rect, "-1", false, true);
+        drawAssistButton(canvas, speedHoldPlus1Rect, "+1", false, true);
+        drawAssistButton(canvas, speedHoldPlus5Rect, "+5", false, true);
+
+        paint.setTextAlign(Paint.Align.LEFT);
+    }
+
+    private void drawAssistMetric(Canvas canvas, RectF r, String label, String value, String unit, boolean active) {
+        paint.setColor(active ? Color.rgb(34, 57, 45) : Color.rgb(23, 30, 36));
+        canvas.drawRoundRect(r, dp(8), dp(8), paint);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(dp(2));
+        paint.setColor(active ? Color.rgb(73, 160, 120) : Color.rgb(61, 71, 80));
+        canvas.drawRoundRect(r, dp(8), dp(8), paint);
+        paint.setStyle(Paint.Style.FILL);
+
+        paint.setTextAlign(Paint.Align.CENTER);
+        paint.setColor(active ? Color.rgb(174, 219, 190) : Color.rgb(126, 136, 146));
+        paint.setTextSize(dp(12));
+        paint.setFakeBoldText(true);
+        canvas.drawText(label, r.centerX(), r.top + dp(24), paint);
+        paint.setColor(active ? Color.WHITE : Color.rgb(126, 136, 146));
+        paint.setTextSize(dp(42));
+        canvas.drawText(value, r.centerX(), r.centerY() + dp(14), paint);
+        paint.setFakeBoldText(false);
+        paint.setTextSize(dp(13));
+        paint.setColor(active ? Color.rgb(174, 219, 190) : Color.rgb(126, 136, 146));
+        canvas.drawText(unit, r.centerX(), r.bottom - dp(18), paint);
+        paint.setTextAlign(Paint.Align.LEFT);
+    }
+
+    private void drawAssistButton(Canvas canvas, RectF r, String label, boolean active, boolean enabled) {
+        paint.setColor(!enabled
+                ? Color.rgb(18, 23, 28)
+                : active
+                ? Color.rgb(73, 160, 120)
+                : Color.rgb(23, 30, 36));
+        canvas.drawRoundRect(r, dp(8), dp(8), paint);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(dp(2));
+        paint.setColor(!enabled
+                ? Color.rgb(42, 50, 58)
+                : active
+                ? Color.WHITE
+                : Color.rgb(73, 160, 120));
+        canvas.drawRoundRect(r, dp(8), dp(8), paint);
+        paint.setStyle(Paint.Style.FILL);
+        paint.setTextAlign(Paint.Align.CENTER);
+        paint.setFakeBoldText(true);
+        paint.setTextSize(label.length() > 8 ? dp(15) : dp(24));
+        paint.setColor(!enabled
+                ? Color.rgb(108, 119, 128)
+                : active
+                ? Color.rgb(6, 22, 17)
+                : Color.rgb(218, 226, 233));
+        canvas.drawText(fitText(label, r.width() - dp(20), paint.getTextSize()), r.centerX(), r.centerY() + dp(8), paint);
+        paint.setFakeBoldText(false);
+        paint.setTextAlign(Paint.Align.LEFT);
+    }
+
+    private String formatSpeedHoldOutput() {
+        if (Float.isNaN(speedHoldOutput)) {
+            return "--";
+        }
+
+        if (speedHoldOutput > THROTTLE_NEUTRAL + 0.02f) {
+            return String.format(Locale.US, "PWR %.0f%%", ((speedHoldOutput - THROTTLE_NEUTRAL) / THROTTLE_NEUTRAL) * 100f);
+        }
+
+        if (speedHoldOutput < THROTTLE_NEUTRAL - 0.02f) {
+            return String.format(Locale.US, "BRK %.0f%%", ((THROTTLE_NEUTRAL - speedHoldOutput) / THROTTLE_NEUTRAL) * 100f);
+        }
+
+        return "COAST";
+    }
+
     private void drawButton(Canvas canvas, RectF r, DeckProfile.ButtonDef def, boolean active) {
         String command = def.command == null ? "" : def.command;
         boolean disabled = !isCommandAvailable(command);
@@ -1508,6 +1711,51 @@ public final class TrainDeckView extends View {
         }
 
         return true;
+    }
+
+    private boolean handleAssistDown(float x, float y) {
+        if (speedHoldToggleRect.contains(x, y)) {
+            sendAssistButton("TD Hold", "td_speed_hold_toggle");
+            return true;
+        }
+
+        if (speedHoldCurrentRect.contains(x, y)) {
+            sendAssistButton("Set Current", "td_speed_hold_set_current");
+            return true;
+        }
+
+        if (speedHoldNextRect.contains(x, y)) {
+            sendAssistButton("Set Next", "td_speed_hold_set_next");
+            return true;
+        }
+
+        if (speedHoldMinus5Rect.contains(x, y)) {
+            sendAssistButton("-5", "td_speed_hold_minus_5");
+            return true;
+        }
+
+        if (speedHoldMinus1Rect.contains(x, y)) {
+            sendAssistButton("-1", "td_speed_hold_minus_1");
+            return true;
+        }
+
+        if (speedHoldPlus1Rect.contains(x, y)) {
+            sendAssistButton("+1", "td_speed_hold_plus_1");
+            return true;
+        }
+
+        if (speedHoldPlus5Rect.contains(x, y)) {
+            sendAssistButton("+5", "td_speed_hold_plus_5");
+            return true;
+        }
+
+        return true;
+    }
+
+    private void sendAssistButton(String label, String command) {
+        sendVirtualButton(label, command);
+        performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+        invalidate();
     }
 
     private boolean handleWalkPointerDown(MotionEvent event) {

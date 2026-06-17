@@ -9,6 +9,10 @@ internal sealed class BridgeService : IDisposable
 {
     private static readonly TimeSpan DeckNeutralizeDelay = TimeSpan.FromSeconds(12);
     private static readonly TimeSpan TelemetryInterval = TimeSpan.FromMilliseconds(500);
+    private const double SpeedHoldNeutral = 0.5;
+    private const double SpeedHoldDeadbandKmh = 3.0;
+    private const double SpeedHoldMinTargetKmh = 0.0;
+    private const double SpeedHoldMaxTargetKmh = 250.0;
     private static readonly PairedCommand[] PairedCommands =
     [
         new("door_left", "door_left", "door_close_left"),
@@ -26,6 +30,13 @@ internal sealed class BridgeService : IDisposable
     private bool lastAutoTargetActive;
     private bool deckNeutralizedSinceApiLost;
     private bool autoAxisSuppressedUntilApiReadyLogged;
+    private bool speedHoldArmed;
+    private double speedHoldTargetKmh = 80;
+    private double speedHoldOutput = SpeedHoldNeutral;
+    private string speedHoldMode = "off";
+    private string speedHoldLastLog = "";
+    private double? lastTelemetrySpeedKmh;
+    private TswSpeedLimitTelemetry? lastTelemetrySpeedLimit;
     private CancellationTokenSource? pendingDeckNeutralizeCts;
     private CancellationTokenSource? cts;
     private UdpClient? udp;
@@ -160,15 +171,26 @@ internal sealed class BridgeService : IDisposable
             return;
         }
 
-        var endpointChanged = LastRemote is null || !LastRemote.Equals(remote);
-        LastRemote = remote;
+        var isHello = string.Equals(message.Type, "hello", StringComparison.OrdinalIgnoreCase);
+        var knownRemote = false;
         var remoteAdded = false;
         lock (deckRemotesSync)
         {
-            remoteAdded = deckRemotes.Add(remote);
+            knownRemote = deckRemotes.Contains(remote);
+            if (isHello)
+            {
+                remoteAdded = deckRemotes.Add(remote);
+                knownRemote = true;
+            }
         }
 
-        if (endpointChanged || remoteAdded)
+        var endpointChanged = knownRemote && (LastRemote is null || !LastRemote.Equals(remote));
+        if (knownRemote)
+        {
+            LastRemote = remote;
+        }
+
+        if (knownRemote && (endpointChanged || remoteAdded))
         {
             StatusChanged?.Invoke(this, new BridgeStatusEventArgs(IsRunning, Port, LastRemote));
         }
@@ -203,6 +225,11 @@ internal sealed class BridgeService : IDisposable
         var state = message.State ?? "";
         var command = message.Command ?? "";
         var label = message.Label ?? command;
+
+        if (HandleSpeedHoldButton(command, state))
+        {
+            return;
+        }
 
         if (TryHandleMouseButton(command, state, label))
         {
@@ -272,6 +299,185 @@ internal sealed class BridgeService : IDisposable
         }
 
         return false;
+    }
+
+    private bool HandleSpeedHoldButton(string command, string state)
+    {
+        if (!command.StartsWith("td_speed_hold_", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!string.Equals(state, "down", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        switch (command.ToLowerInvariant())
+        {
+            case "td_speed_hold_toggle":
+                if (speedHoldArmed)
+                {
+                    DisarmSpeedHold("tablet");
+                }
+                else
+                {
+                    ArmSpeedHold(lastTelemetrySpeedKmh ?? speedHoldTargetKmh, "tablet");
+                }
+                break;
+            case "td_speed_hold_set_current":
+                if (lastTelemetrySpeedKmh is { } current)
+                {
+                    SetSpeedHoldTarget(current, "current speed");
+                }
+                break;
+            case "td_speed_hold_set_next":
+                if (lastTelemetrySpeedLimit is { } limit)
+                {
+                    SetSpeedHoldTarget(limit.NextSpeedLimitKmh, "next limit");
+                }
+                break;
+            case "td_speed_hold_minus_5":
+                NudgeSpeedHoldTarget(-5);
+                break;
+            case "td_speed_hold_minus_1":
+                NudgeSpeedHoldTarget(-1);
+                break;
+            case "td_speed_hold_plus_1":
+                NudgeSpeedHoldTarget(1);
+                break;
+            case "td_speed_hold_plus_5":
+                NudgeSpeedHoldTarget(5);
+                break;
+        }
+
+        return true;
+    }
+
+    private void ArmSpeedHold(double targetKmh, string reason)
+    {
+        if (!tswApi.IsReady || !tswApi.IsAxisMapped("throttle"))
+        {
+            LogWarn("TD Speed Hold skipped; throttle API axis is not available for the current cab.");
+            return;
+        }
+
+        speedHoldTargetKmh = ClampSpeedHoldTarget(targetKmh);
+        speedHoldArmed = true;
+        speedHoldMode = "armed";
+        speedHoldOutput = SpeedHoldNeutral;
+        LogSpeedHold($"armed at {speedHoldTargetKmh:0} km/h ({reason})");
+    }
+
+    private void DisarmSpeedHold(string reason, bool neutralize = true)
+    {
+        if (!speedHoldArmed && string.Equals(speedHoldMode, "off", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        speedHoldArmed = false;
+        speedHoldMode = "off";
+        speedHoldOutput = SpeedHoldNeutral;
+        LogSpeedHold($"disarmed ({reason})");
+        if (neutralize && tswApi.IsReady && tswApi.IsAxisMapped("throttle"))
+        {
+            _ = SendSpeedHoldAxisAsync(SpeedHoldNeutral);
+        }
+    }
+
+    private void SetSpeedHoldTarget(double targetKmh, string reason)
+    {
+        speedHoldTargetKmh = ClampSpeedHoldTarget(targetKmh);
+        if (!speedHoldArmed)
+        {
+            ArmSpeedHold(speedHoldTargetKmh, reason);
+            return;
+        }
+
+        LogSpeedHold($"target {speedHoldTargetKmh:0} km/h ({reason})");
+    }
+
+    private void NudgeSpeedHoldTarget(double deltaKmh)
+    {
+        SetSpeedHoldTarget(speedHoldTargetKmh + deltaKmh, deltaKmh > 0 ? $"+{deltaKmh:0}" : $"{deltaKmh:0}");
+    }
+
+    private async Task UpdateSpeedHoldAsync(double currentSpeedKmh)
+    {
+        if (!speedHoldArmed)
+        {
+            speedHoldMode = "off";
+            speedHoldOutput = SpeedHoldNeutral;
+            return;
+        }
+
+        if (!tswApi.IsReady || !tswApi.IsAxisMapped("throttle"))
+        {
+            DisarmSpeedHold("API unavailable");
+            return;
+        }
+
+        var error = speedHoldTargetKmh - currentSpeedKmh;
+        var output = SpeedHoldNeutral;
+        var mode = "hold";
+        if (error < -SpeedHoldDeadbandKmh)
+        {
+            var overspeed = Math.Min(25, Math.Abs(error) - SpeedHoldDeadbandKmh);
+            output = SpeedHoldNeutral - Math.Min(0.38, 0.08 + overspeed * 0.018);
+            mode = "brake";
+        }
+        else if (error > SpeedHoldDeadbandKmh)
+        {
+            var underspeed = Math.Min(30, error - SpeedHoldDeadbandKmh);
+            output = SpeedHoldNeutral + Math.Min(0.34, 0.08 + underspeed * 0.012);
+            mode = "power";
+        }
+
+        output = Math.Clamp(output, 0.08, 0.86);
+        speedHoldMode = mode;
+        speedHoldOutput = output;
+        await SendSpeedHoldAxisAsync(output);
+
+        var summary = $"{mode}:{speedHoldTargetKmh:0}:{currentSpeedKmh:0}:{output:0.000}";
+        if (!string.Equals(summary, speedHoldLastLog, StringComparison.OrdinalIgnoreCase))
+        {
+            speedHoldLastLog = summary;
+            LogInfo($"TD Hold {mode,-5} target={speedHoldTargetKmh:0} km/h speed={currentSpeedKmh:0.0} km/h throttle={output:0.000}");
+        }
+    }
+
+    private async Task SendSpeedHoldAxisAsync(double value)
+    {
+        if (tswApi.TryMapAxis("throttle", value, out var command))
+        {
+            await tswApi.SendAxisAsync(command);
+        }
+    }
+
+    private static double ClampSpeedHoldTarget(double targetKmh)
+    {
+        if (!double.IsFinite(targetKmh))
+        {
+            return 80;
+        }
+
+        return Math.Round(Math.Clamp(targetKmh, SpeedHoldMinTargetKmh, SpeedHoldMaxTargetKmh));
+    }
+
+    private void LogSpeedHold(string message)
+    {
+        speedHoldLastLog = "";
+        LogInfo($"TD Hold {message}");
+    }
+
+    private static bool IsSpeedHoldManualOverride(string? control)
+    {
+        return string.Equals(control, "throttle", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(control, "dynamic_brake", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(control, "train_brake", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(control, "independent_brake", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(control, "afb", StringComparison.OrdinalIgnoreCase);
     }
 
     private string ResolveApiButtonCommand(string command)
@@ -392,6 +598,10 @@ internal sealed class BridgeService : IDisposable
 
         var now = DateTimeOffset.UtcNow;
         var value = message.Value.Value;
+        if (speedHoldArmed && IsSpeedHoldManualOverride(message.Control))
+        {
+            DisarmSpeedHold($"manual {message.Control}", neutralize: false);
+        }
 
         var handledByApi = !KeyboardEnabled && tswApi.IsReady && tswApi.IsAxisMapped(message.Control);
         if (handledByApi && tswApi.TryMapAxis(message.Control, value, out var apiCommand))
@@ -540,9 +750,11 @@ internal sealed class BridgeService : IDisposable
         if (LastRemote is null)
         {
             axisMapper.Reset();
+            DisarmSpeedHold(e.Status);
             return;
         }
 
+        DisarmSpeedHold(e.Status);
         if (deckNeutralizedSinceApiLost)
         {
             return;
@@ -629,6 +841,9 @@ internal sealed class BridgeService : IDisposable
         }
 
         var speedLimit = await tswApi.TryGetSpeedLimitTelemetryAsync(token);
+        lastTelemetrySpeedKmh = speedKmh.Value;
+        lastTelemetrySpeedLimit = speedLimit;
+        await UpdateSpeedHoldAsync(speedKmh.Value);
         var payload = new TrainDeckBridgeMessage
         {
             Type = "telemetry",
@@ -636,6 +851,10 @@ internal sealed class BridgeService : IDisposable
             SpeedMph = speedKmh.Value * 0.621371,
             NextSpeedLimitKmh = speedLimit?.NextSpeedLimitKmh,
             NextSpeedLimitDistanceM = speedLimit?.DistanceMeters,
+            SpeedHoldArmed = speedHoldArmed,
+            SpeedHoldTargetKmh = speedHoldArmed ? speedHoldTargetKmh : null,
+            SpeedHoldOutput = speedHoldArmed ? speedHoldOutput : null,
+            SpeedHoldMode = speedHoldMode,
             At = Environment.TickCount64
         };
 
@@ -719,6 +938,16 @@ internal sealed class BridgeService : IDisposable
             "reverser_key"
         }
             .Where(IsButtonHandledByApi)
+            .Concat([
+                "td_speed_hold_toggle",
+                "td_speed_hold_set_current",
+                "td_speed_hold_set_next",
+                "td_speed_hold_minus_5",
+                "td_speed_hold_minus_1",
+                "td_speed_hold_plus_1",
+                "td_speed_hold_plus_5"
+            ])
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
         var payload = new TrainDeckBridgeMessage

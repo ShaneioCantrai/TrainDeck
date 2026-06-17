@@ -77,6 +77,18 @@ internal sealed class TrainDeckBridgeMessage
     [JsonPropertyName("nextSpeedLimitDistanceM")]
     public double? NextSpeedLimitDistanceM { get; set; }
 
+    [JsonPropertyName("speedHoldArmed")]
+    public bool SpeedHoldArmed { get; set; }
+
+    [JsonPropertyName("speedHoldTargetKmh")]
+    public double? SpeedHoldTargetKmh { get; set; }
+
+    [JsonPropertyName("speedHoldOutput")]
+    public double? SpeedHoldOutput { get; set; }
+
+    [JsonPropertyName("speedHoldMode")]
+    public string SpeedHoldMode { get; set; } = "";
+
     [JsonPropertyName("at")]
     public long At { get; set; }
 }

@@ -306,11 +306,19 @@ public class MainActivity extends Activity implements TrainDeckView.Callback {
             double speedKmh = message.optDouble("speedKmh", Double.NaN);
             double nextSpeedLimitKmh = message.optDouble("nextSpeedLimitKmh", Double.NaN);
             double nextSpeedLimitDistanceM = message.optDouble("nextSpeedLimitDistanceM", Double.NaN);
+            boolean speedHoldArmed = message.optBoolean("speedHoldArmed", false);
+            double speedHoldTargetKmh = message.optDouble("speedHoldTargetKmh", Double.NaN);
+            double speedHoldOutput = message.optDouble("speedHoldOutput", Double.NaN);
+            String speedHoldMode = message.optString("speedHoldMode", "off");
             if (!Double.isNaN(speedKmh)) {
                 runOnUiThread(() -> deckView.setTelemetry(
                         (float) speedKmh,
                         Double.isNaN(nextSpeedLimitKmh) ? Float.NaN : (float) nextSpeedLimitKmh,
-                        Double.isNaN(nextSpeedLimitDistanceM) ? Float.NaN : (float) nextSpeedLimitDistanceM));
+                        Double.isNaN(nextSpeedLimitDistanceM) ? Float.NaN : (float) nextSpeedLimitDistanceM,
+                        speedHoldArmed,
+                        Double.isNaN(speedHoldTargetKmh) ? Float.NaN : (float) speedHoldTargetKmh,
+                        Double.isNaN(speedHoldOutput) ? Float.NaN : (float) speedHoldOutput,
+                        speedHoldMode));
             }
         }
     }
