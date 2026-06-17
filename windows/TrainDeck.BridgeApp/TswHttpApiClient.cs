@@ -65,9 +65,9 @@ internal sealed class TswHttpApiClient : IDisposable
         UpdateStatus(false, "stopped");
     }
 
-    public bool TryMapAxis(string control, double value, out TswHttpApiAxisCommand command)
+    public bool TryMapAxis(string control, double value, out TswHttpApiAxisCommand command, bool force = false)
     {
-        return axisMapper.TryMap(control, value, out command);
+        return axisMapper.TryMap(control, value, out command, force);
     }
 
     public bool IsAxisMapped(string control)
@@ -759,7 +759,7 @@ internal sealed class TswHttpApiAxisMapper
         return options;
     }
 
-    public bool TryMap(string control, double value, out TswHttpApiAxisCommand command)
+    public bool TryMap(string control, double value, out TswHttpApiAxisCommand command, bool force = false)
     {
         command = default!;
         if (!currentProfile.Axes.TryGetValue(control, out var bindings) || bindings.Count == 0)
@@ -773,7 +773,7 @@ internal sealed class TswHttpApiAxisMapper
             var controlName = ResolveControlName(binding.ControlName);
             var mapped = binding.ConstantValue ?? MapValue(binding, value);
             var outputKey = $"{control}|{controlName}";
-            if (lastValues.TryGetValue(outputKey, out var previous) && Math.Abs(previous - mapped) < 0.005)
+            if (!force && lastValues.TryGetValue(outputKey, out var previous) && Math.Abs(previous - mapped) < 0.005)
             {
                 continue;
             }

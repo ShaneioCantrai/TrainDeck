@@ -549,7 +549,7 @@ internal sealed class BridgeService : IDisposable
 
     private async Task SendSpeedHoldAxisAsync(double value)
     {
-        if (tswApi.TryMapAxis("throttle", value, out var command))
+        if (tswApi.TryMapAxis("throttle", value, out var command, force: true))
         {
             await tswApi.SendAxisAsync(command);
         }
