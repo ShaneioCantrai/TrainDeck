@@ -10,15 +10,14 @@ internal sealed class BridgeService : IDisposable
     private static readonly TimeSpan DeckNeutralizeDelay = TimeSpan.FromSeconds(12);
     private static readonly TimeSpan TelemetryInterval = TimeSpan.FromMilliseconds(500);
     private const double SpeedHoldNeutral = 0.5;
-    private const double SpeedHoldDeadbandKmh = 3.0;
+    private const double SpeedHoldDeadbandKmh = 1.0;
     private const double SpeedHoldMinTargetKmh = 0.0;
     private const double SpeedHoldMaxTargetKmh = 250.0;
+    private const double SpeedHoldPowerMax = 0.98;
+    private const double SpeedHoldPowerBase = 0.18;
+    private const double SpeedHoldPowerGain = 0.020;
+    private const double SpeedHoldPowerRampKmh = 35.0;
     private const double AutoPilotLimitBufferKmh = 1.0;
-    private const double AutoPilotDeadbandKmh = 1.0;
-    private const double AutoPilotPowerMax = 0.98;
-    private const double AutoPilotPowerBase = 0.18;
-    private const double AutoPilotPowerGain = 0.020;
-    private const double AutoPilotPowerRampKmh = 35.0;
     private const double AutoPilotBrakeDecelMps2 = 0.48;
     private const double AutoPilotReactionSeconds = 4.0;
     private const double AutoPilotBrakeMarginMeters = 35.0;
@@ -478,25 +477,24 @@ internal sealed class BridgeService : IDisposable
         }
 
         var error = speedHoldTargetKmh - currentSpeedKmh;
-        var deadband = speedHoldAutoPilot ? AutoPilotDeadbandKmh : SpeedHoldDeadbandKmh;
         var output = SpeedHoldNeutral;
         var mode = "hold";
-        if (error < -deadband)
+        if (error < -SpeedHoldDeadbandKmh)
         {
-            var overspeed = Math.Min(25, Math.Abs(error) - deadband);
+            var overspeed = Math.Min(25, Math.Abs(error) - SpeedHoldDeadbandKmh);
             output = SpeedHoldNeutral - Math.Min(0.38, 0.08 + overspeed * 0.018);
             mode = "brake";
         }
-        else if (error > deadband)
+        else if (error > SpeedHoldDeadbandKmh)
         {
-            var underspeed = Math.Min(speedHoldAutoPilot ? AutoPilotPowerRampKmh : 30, error - deadband);
-            output = speedHoldAutoPilot
-                ? SpeedHoldNeutral + Math.Min(AutoPilotPowerMax - SpeedHoldNeutral, AutoPilotPowerBase + underspeed * AutoPilotPowerGain)
-                : SpeedHoldNeutral + Math.Min(0.34, 0.08 + underspeed * 0.012);
+            var underspeed = Math.Min(SpeedHoldPowerRampKmh, error - SpeedHoldDeadbandKmh);
+            output = SpeedHoldNeutral + Math.Min(
+                SpeedHoldPowerMax - SpeedHoldNeutral,
+                SpeedHoldPowerBase + underspeed * SpeedHoldPowerGain);
             mode = "power";
         }
 
-        output = Math.Clamp(output, 0.08, speedHoldAutoPilot ? AutoPilotPowerMax : 0.86);
+        output = Math.Clamp(output, 0.08, SpeedHoldPowerMax);
         speedHoldMode = speedHoldAutoPilot ? $"auto-{mode}" : mode;
         speedHoldOutput = output;
         await SendSpeedHoldAxisAsync(output);
