@@ -340,6 +340,9 @@ public final class TrainDeckView extends View {
                         performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
                         return true;
                     }
+                    if ("afb".equals(axes[axis].control) && handleAfbStepTouch(axes[axis], x, y)) {
+                        return true;
+                    }
                     if (isStepAxis(axes[axis].control)) {
                         handleStepAxisTouch(axes[axis], x, y);
                         return true;
@@ -683,7 +686,7 @@ public final class TrainDeckView extends View {
         canvas.drawRoundRect(r, dp(8), dp(8), paint);
 
         paint.setColor(unavailable ? Color.rgb(38, 43, 48) : Color.rgb(54, 61, 68));
-        RectF slot = new RectF(r.centerX() - dp(7), r.top + dp(42), r.centerX() + dp(7), r.bottom - dp(34));
+        RectF slot = new RectF(r.centerX() - dp(7), axisTrackTop(axis), r.centerX() + dp(7), axisTrackBottom(axis));
         canvas.drawRoundRect(slot, dp(7), dp(7), paint);
 
         paint.setStrokeWidth(dp(1));
@@ -753,6 +756,10 @@ public final class TrainDeckView extends View {
             paint.setFakeBoldText(true);
             canvas.drawText(String.format(Locale.US, "%.0f", afbSpeedKmh(axis.value)), r.centerX(), knob.centerY() + dp(4), paint);
             paint.setFakeBoldText(false);
+        }
+
+        if ("afb".equals(axis.control)) {
+            drawAfbStepButtons(canvas, axis, unavailable);
         }
 
         paint.setTextAlign(Paint.Align.CENTER);
@@ -880,6 +887,38 @@ public final class TrainDeckView extends View {
         paint.setFakeBoldText(true);
         drawCenteredLabel(canvas, label, r);
         paint.setFakeBoldText(false);
+    }
+
+    private void drawAfbStepButtons(Canvas canvas, AxisControl axis, boolean unavailable) {
+        RectF r = axis.rect;
+        float gap = dp(7);
+        float buttonTop = r.bottom - dp(68);
+        float buttonBottom = r.bottom - dp(36);
+        float buttonW = (r.width() - dp(26) * 2 - gap) / 2f;
+        axis.afbMinusRect.set(r.left + dp(26), buttonTop, r.left + dp(26) + buttonW, buttonBottom);
+        axis.afbPlusRect.set(axis.afbMinusRect.right + gap, buttonTop, r.right - dp(26), buttonBottom);
+
+        drawAfbStepButton(canvas, axis.afbMinusRect, "-", unavailable || afbSpeedKmh(axis.value) <= 0f);
+        drawAfbStepButton(canvas, axis.afbPlusRect, "+", unavailable || afbSpeedKmh(axis.value) >= AFB_MAX_SPEED_KMH);
+    }
+
+    private void drawAfbStepButton(Canvas canvas, RectF r, String label, boolean unavailable) {
+        paint.setColor(unavailable ? Color.rgb(18, 23, 28) : Color.rgb(23, 30, 36));
+        canvas.drawRoundRect(r, dp(8), dp(8), paint);
+
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(dp(2));
+        paint.setColor(unavailable ? Color.rgb(42, 50, 58) : Color.rgb(61, 71, 80));
+        canvas.drawRoundRect(r, dp(8), dp(8), paint);
+        paint.setStyle(Paint.Style.FILL);
+
+        paint.setColor(unavailable ? Color.rgb(108, 119, 128) : Color.rgb(232, 236, 239));
+        paint.setTextAlign(Paint.Align.CENTER);
+        paint.setTextSize(dp(20));
+        paint.setFakeBoldText(true);
+        canvas.drawText(label, r.centerX(), r.centerY() + dp(7), paint);
+        paint.setFakeBoldText(false);
+        paint.setTextAlign(Paint.Align.LEFT);
     }
 
     private List<AxisOption> optionsForAxis(AxisControl axis) {
@@ -1725,8 +1764,8 @@ public final class TrainDeckView extends View {
         if (!isAxisAvailable(axis.control)) {
             return;
         }
-        float top = axis.rect.top + dp(42);
-        float bottom = axis.rect.bottom - dp(34);
+        float top = axisTrackTop(axis);
+        float bottom = axisTrackBottom(axis);
         float clamped = Math.max(top, Math.min(bottom, y));
         float norm = 1f - ((clamped - top) / (bottom - top));
         if (axis.notches > 1) {
@@ -1748,6 +1787,14 @@ public final class TrainDeckView extends View {
             callback.onAxisChanged(axis.control, axis.value);
         }
         invalidate();
+    }
+
+    private float axisTrackTop(AxisControl axis) {
+        return axis.rect.top + dp(42);
+    }
+
+    private float axisTrackBottom(AxisControl axis) {
+        return axis.rect.bottom - dp("afb".equals(axis.control) ? 82 : 34);
     }
 
     private void handleStepAxisTouch(AxisControl axis, float x, float y) {
@@ -1775,6 +1822,37 @@ public final class TrainDeckView extends View {
             float next = Math.max(-1f, Math.min(1f, current + direction));
             setAxisValue(axis, next);
         }
+    }
+
+    private boolean handleAfbStepTouch(AxisControl axis, float x, float y) {
+        if (axis.afbMinusRect.contains(x, y)) {
+            stepAfbAxis(axis, -1);
+            return true;
+        }
+
+        if (axis.afbPlusRect.contains(x, y)) {
+            stepAfbAxis(axis, 1);
+            return true;
+        }
+
+        return false;
+    }
+
+    private void stepAfbAxis(AxisControl axis, int direction) {
+        float currentSpeed = Math.round(afbSpeedKmh(axis.value) / AFB_STEP_KMH) * AFB_STEP_KMH;
+        float nextSpeed = Math.max(0f, Math.min(AFB_MAX_SPEED_KMH, currentSpeed + direction * AFB_STEP_KMH));
+        float value = nextSpeed / AFB_MAX_SPEED_KMH;
+        axis.value = value;
+        afbEnabled = value > 0.01f;
+        setToggleState("afb", afbEnabled);
+        if (afbEnabled) {
+            lastAfbValue = value;
+        }
+        performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+        if (callback != null) {
+            callback.onAxisChanged(axis.control, axis.value);
+        }
+        invalidate();
     }
 
     private void setAxisValue(AxisControl axis, float value) {
@@ -1991,6 +2069,8 @@ public final class TrainDeckView extends View {
         final float initialValue;
         final RectF rect = new RectF();
         final RectF keyRect = new RectF();
+        final RectF afbMinusRect = new RectF();
+        final RectF afbPlusRect = new RectF();
         final List<RectF> optionRects = new ArrayList<>();
         final List<AxisOption> defaultOptions = new ArrayList<>();
         float value;
