@@ -210,7 +210,7 @@
     {
       "id": "class150_2",
       "name": "Class 150/2 DMU",
-      "matchActorClasses": [ "RVM_TFW_Class150_DMSL_C" ],
+      "matchActorClasses": [ "RVM_TFW_Class150_DMSL_C", "RVM_GWR_Class150_DMS_C" ],
       "matchActorContains": [ "Class150", "Class_150", "Class 150" ],
       "axes": {
         "reverser": [

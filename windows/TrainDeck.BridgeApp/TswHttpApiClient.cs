@@ -33,6 +33,7 @@ internal sealed class TswHttpApiClient : IDisposable
     public event EventHandler<TswHttpApiStatusEventArgs>? StatusChanged;
 
     public bool IsReady { get; private set; }
+    public bool HasActiveActor { get; private set; }
     public string StatusText
     {
         get
@@ -60,6 +61,7 @@ internal sealed class TswHttpApiClient : IDisposable
         cts?.Cancel();
         cts?.Dispose();
         cts = null;
+        HasActiveActor = false;
         UpdateStatus(false, "stopped");
     }
 
@@ -307,6 +309,7 @@ internal sealed class TswHttpApiClient : IDisposable
         apiKey = FindApiKey();
         if (string.IsNullOrWhiteSpace(apiKey))
         {
+            HasActiveActor = false;
             UpdateStatus(false, "missing CommAPIKey.txt");
             return;
         }
@@ -325,14 +328,17 @@ internal sealed class TswHttpApiClient : IDisposable
             axisMapper.SetContext(actor, cab);
             var profile = axisMapper.CurrentProfileName;
             var actorText = string.IsNullOrWhiteSpace(actor) ? "connected" : $"connected: {actor}";
+            HasActiveActor = !string.IsNullOrWhiteSpace(actor);
             UpdateStatus(true, $"{actorText} | profile: {profile}");
         }
         catch (HttpRequestException ex) when (ex.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
         {
+            HasActiveActor = false;
             UpdateStatus(false, "bad API key");
         }
         catch (Exception ex)
         {
+            HasActiveActor = false;
             if (ex.Message.Contains("actively refused", StringComparison.OrdinalIgnoreCase))
             {
                 UpdateStatus(false, TswSteamLauncher.IsTrainSimWorldRunning()
@@ -595,17 +601,30 @@ internal sealed class TswHttpApiAxisMapper
     {
         var options = new Dictionary<string, List<TrainDeckAxisOption>>(StringComparer.OrdinalIgnoreCase);
         if (currentProfile.Axes.TryGetValue("reverser", out var reverserBindings)
-            && reverserBindings.FirstOrDefault() is { } reverser
-            && ResolveControlName(reverser.ControlName).Contains("MasterControlSwitch", StringComparison.OrdinalIgnoreCase))
+            && reverserBindings.FirstOrDefault() is { } reverser)
         {
-            options["reverser"] =
-            [
-                new TrainDeckAxisOption("Reverse", -1),
-                new TrainDeckAxisOption("Recovery", -0.5),
-                new TrainDeckAxisOption("Secure", 0),
-                new TrainDeckAxisOption("Forward", 0.5),
-                new TrainDeckAxisOption("Shutdown", 1, Danger: true)
-            ];
+            var controlName = ResolveControlName(reverser.ControlName);
+            if (controlName.Contains("MasterControlSwitch", StringComparison.OrdinalIgnoreCase))
+            {
+                options["reverser"] =
+                [
+                    new TrainDeckAxisOption("Reverse", -1),
+                    new TrainDeckAxisOption("Recovery", -0.5),
+                    new TrainDeckAxisOption("Secure", 0),
+                    new TrainDeckAxisOption("Forward", 0.5),
+                    new TrainDeckAxisOption("Shutdown", 1, Danger: true)
+                ];
+            }
+            else if (controlName.Contains("Reverser_IrregularLever", StringComparison.OrdinalIgnoreCase)
+                || (reverser.TargetMin == 0.25 && reverser.TargetNeutral == 0.5 && reverser.TargetMax == 0.75))
+            {
+                options["reverser"] =
+                [
+                    new TrainDeckAxisOption("Reverse", -1),
+                    new TrainDeckAxisOption("Neutral", 0),
+                    new TrainDeckAxisOption("Forward", 1)
+                ];
+            }
         }
 
         return options;
@@ -977,8 +996,8 @@ internal sealed class TswHttpApiProfileCatalog
                 || control.Name.Contains("MarkerLight", StringComparison.OrdinalIgnoreCase)
                 || control.Name.Contains("MarkerLights", StringComparison.OrdinalIgnoreCase)
                 || control.Name.Contains("HeadMarker", StringComparison.OrdinalIgnoreCase));
-        mapped += SetMomentary(profile, "tail_lights", tailLight?.Name, 120);
-        mapped += SetMomentary(profile, "marker_lights", tailLight?.Name, 120);
+        mapped += SetLightControl(profile, "tail_lights", tailLight, 120);
+        mapped += SetLightControl(profile, "marker_lights", tailLight, 120);
         mapped += SetMomentary(profile, "ditch_lights", byId("DitchLights")?.Name, 120);
         mapped += SetMomentary(profile, "cab_light", byId("CabLights")?.Name, 120);
         mapped += SetMomentary(profile, "gauge_light", byId("GaugeLights")?.Name, 120);
@@ -1108,6 +1127,19 @@ internal sealed class TswHttpApiProfileCatalog
         return string.IsNullOrWhiteSpace(controlName)
             ? 0
             : SetMomentarySequence(profile, command, [controlName], holdMs, releaseValue);
+    }
+
+    private static int SetLightControl(TswHttpApiProfile profile, string command, TswCabControlSnapshot? control, int holdMs)
+    {
+        if (control is null)
+        {
+            return 0;
+        }
+
+        return control.Name.Contains("PushButton", StringComparison.OrdinalIgnoreCase)
+            || control.Identifier.Contains("Button", StringComparison.OrdinalIgnoreCase)
+            ? SetMomentary(profile, command, control.Name, holdMs)
+            : SetCycle(profile, command, control.Name, [0, 1]);
     }
 
     private static int SetMomentarySequence(TswHttpApiProfile profile, string command, IReadOnlyList<string> controlNames, int holdMs)

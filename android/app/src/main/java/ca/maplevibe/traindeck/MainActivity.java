@@ -74,6 +74,16 @@ public class MainActivity extends Activity implements TrainDeckView.Callback {
     }
 
     @Override
+    public void onBackPressed() {
+        if (deckView != null && deckView.isRearrangeMode()) {
+            deckView.setRearrangeMode(false);
+            return;
+        }
+
+        super.onBackPressed();
+    }
+
+    @Override
     public void onButtonDown(int index, DeckProfile.ButtonDef button) {
         sendButton(button, "down");
     }
@@ -107,6 +117,17 @@ public class MainActivity extends Activity implements TrainDeckView.Callback {
     }
 
     @Override
+    public void onPointerScrolled(float dy) {
+        try {
+            JSONObject payload = base("pointer");
+            payload.put("action", "scroll");
+            payload.put("dy", Double.parseDouble(String.format(Locale.US, "%.2f", dy)));
+            udp.send(payload);
+        } catch (Exception ignored) {
+        }
+    }
+
+    @Override
     public void onEditButton(int index, DeckProfile.ButtonDef button) {
         showButtonEditor(index, button);
     }
@@ -114,6 +135,11 @@ public class MainActivity extends Activity implements TrainDeckView.Callback {
     @Override
     public void onDeckPageSelected(int page) {
         profile.activePage = page;
+        profile.save(prefs);
+    }
+
+    @Override
+    public void onDeckRearranged() {
         profile.save(prefs);
     }
 
@@ -130,10 +156,12 @@ public class MainActivity extends Activity implements TrainDeckView.Callback {
     private void showAppMenu() {
         new AlertDialog.Builder(this)
                 .setTitle("TrainDeck")
-                .setItems(new CharSequence[]{"Options", "Quit"}, (dialog, which) -> {
+                .setItems(new CharSequence[]{"Options", "Rearrange Deck", "Quit"}, (dialog, which) -> {
                     if (which == 0) {
                         showTargetEditor();
                     } else if (which == 1) {
+                        deckView.setRearrangeMode(true);
+                    } else if (which == 2) {
                         finishAndRemoveTask();
                     }
                 })

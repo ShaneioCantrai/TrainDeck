@@ -64,7 +64,13 @@ internal sealed class BridgeService : IDisposable
     public bool AutoArmTrainSimWorld { get; set; } = true;
 
     public Task<string> ProbeApiAsync() => tswApi.ProbeNowAsync();
-    public Task<string> SnapshotCabAsync() => tswApi.SnapshotCabAsync();
+
+    public async Task<string> SnapshotCabAsync()
+    {
+        var result = await tswApi.SnapshotCabAsync();
+        await SendDeckCapabilitiesAsync();
+        return result;
+    }
 
     public async Task StartAsync(int port)
     {
@@ -391,6 +397,12 @@ internal sealed class BridgeService : IDisposable
 
     private void HandlePointer(TrainDeckMessage message)
     {
+        if (string.Equals(message.Action, "scroll", StringComparison.OrdinalIgnoreCase))
+        {
+            HandlePointerScroll(message);
+            return;
+        }
+
         var dx = message.DeltaX ?? 0;
         var dy = message.DeltaY ?? 0;
         if (Math.Abs(dx) < 0.1 && Math.Abs(dy) < 0.1)
@@ -409,6 +421,26 @@ internal sealed class BridgeService : IDisposable
         var moveY = (int)Math.Round(Math.Max(-80, Math.Min(80, dy)));
         KeyboardOutput.MouseMove(moveX, moveY);
         LogInfo($"pointer move {moveX,4},{moveY,4} focusTsw={focused} foreground={ForegroundAppDetector.DescribeForeground()} {KeyboardOutput.LastSummary}");
+    }
+
+    private void HandlePointerScroll(TrainDeckMessage message)
+    {
+        var dy = message.DeltaY ?? 0;
+        if (Math.Abs(dy) < 0.5)
+        {
+            return;
+        }
+
+        var focused = EnsureKeyboardTargetForButton();
+        if (!focused)
+        {
+            LogWarn($"pointer scroll skipped; Train Sim World could not be focused. foreground={ForegroundAppDetector.DescribeForeground()}");
+            return;
+        }
+
+        var wheel = (int)Math.Round(Math.Max(-8, Math.Min(8, -dy)) * 120);
+        KeyboardOutput.MouseWheel(wheel);
+        LogInfo($"pointer scroll {wheel,5} focusTsw={focused} foreground={ForegroundAppDetector.DescribeForeground()} {KeyboardOutput.LastSummary}");
     }
 
     private void LogInfo(string message) => Log?.Invoke(this, new BridgeLogEventArgs("INFO", message));
@@ -568,6 +600,12 @@ internal sealed class BridgeService : IDisposable
     {
         if (udp is null || LastRemote is null)
         {
+            return;
+        }
+
+        if (!tswApi.HasActiveActor)
+        {
+            LogInfo("tablet capabilities held; active TSW cab actor is unknown.");
             return;
         }
 

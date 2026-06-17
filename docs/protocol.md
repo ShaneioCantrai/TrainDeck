@@ -70,6 +70,9 @@ Axis `value` is normalized:
 ```
 
 Pointer deltas are relative mouse movement from the walk deck touchpad.
+For menu navigation, the tablet may also send `action: "scroll"` with `dy` as
+a relative touchpad scroll delta. Touchpad taps are sent as normal
+`mouse_left` or `mouse_right` button commands.
 
 ## Bridge Commands
 

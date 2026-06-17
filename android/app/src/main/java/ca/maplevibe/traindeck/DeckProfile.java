@@ -134,6 +134,7 @@ public final class DeckProfile {
                 new ButtonDef("Sander", "sander"),
                 new ButtonDef("Wipers", "wipers"),
                 new ButtonDef("Headlights", "headlights"),
+                new ButtonDef("Marker Lt", "marker_lights"),
                 new ButtonDef("Tail Light", "tail_lights"),
                 new ButtonDef("Cab Light", "cab_light"),
                 new ButtonDef("Gauge Light", "gauge_light"),
@@ -145,14 +146,12 @@ public final class DeckProfile {
                 new ButtonDef("PZB Free", "pzb_free"),
                 new ButtonDef("PZB Befehl", "pzb_override"),
                 new ButtonDef("LZB", "lzb"),
-                new ButtonDef("AFB On", "afb_on"),
-                new ButtonDef("AFB Off", "afb_off"),
+                new ButtonDef("AFB", "afb"),
                 new ButtonDef("Map", "map"),
                 new ButtonDef("Pause", "pause"),
                 new ButtonDef("Camera 1", "camera_1"),
-                new ButtonDef("Camera 2", "camera_2"),
                 new ButtonDef("Emerg Reset", "emergency_reset"),
-                new ButtonDef("Spare", "spare")
+                new ButtonDef("Master Key", "master_key")
         )));
         profile.pages.add(new PageDef("Conductor", buttons(
                 new ButtonDef("Door L", "door_left"),
@@ -257,12 +256,64 @@ public final class DeckProfile {
         for (PageDef page : profile.pages) {
             collapseAfbPair(page);
             ensureTailLight(page);
+            ensureDriverMasterKey(page);
+            ensureDriverMarkerLights(page);
             while (page.buttons.size() < BUTTON_COUNT) {
                 int next = page.buttons.size() + 1;
                 page.buttons.add(new ButtonDef("Button " + next, "button_" + next));
             }
             while (page.buttons.size() > BUTTON_COUNT) {
                 page.buttons.remove(page.buttons.size() - 1);
+            }
+        }
+    }
+
+    private static void ensureDriverMarkerLights(PageDef page) {
+        if (!"Driver".equals(page.label)) {
+            return;
+        }
+
+        for (ButtonDef button : page.buttons) {
+            if ("marker_lights".equals(button.command)) {
+                return;
+            }
+        }
+
+        for (int i = page.buttons.size() - 1; i >= 0; i--) {
+            ButtonDef button = page.buttons.get(i);
+            if ("spare".equals(button.command) || button.command.startsWith("button_")) {
+                button.label = "Marker Lt";
+                button.command = "marker_lights";
+                return;
+            }
+        }
+
+        for (ButtonDef button : page.buttons) {
+            if ("camera_2".equals(button.command)) {
+                button.label = "Marker Lt";
+                button.command = "marker_lights";
+                return;
+            }
+        }
+    }
+
+    private static void ensureDriverMasterKey(PageDef page) {
+        if (!"Driver".equals(page.label)) {
+            return;
+        }
+
+        for (ButtonDef button : page.buttons) {
+            if ("master_key".equals(button.command)) {
+                return;
+            }
+        }
+
+        for (int i = page.buttons.size() - 1; i >= 0; i--) {
+            ButtonDef button = page.buttons.get(i);
+            if ("spare".equals(button.command) || button.command.startsWith("button_")) {
+                button.label = "Master Key";
+                button.command = "master_key";
+                return;
             }
         }
     }

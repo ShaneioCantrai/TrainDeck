@@ -16,6 +16,7 @@ internal static class KeyboardOutput
     private const uint MouseEventRightUp = 0x0010;
     private const uint MouseEventMiddleDown = 0x0020;
     private const uint MouseEventMiddleUp = 0x0040;
+    private const uint MouseEventWheel = 0x0800;
 
     private static readonly Dictionary<string, byte> VirtualKeys = BuildVirtualKeys();
     private static readonly HashSet<byte> ExtendedKeys =
@@ -80,6 +81,19 @@ internal static class KeyboardOutput
     public static void MouseButtonUp(string button)
     {
         SendMouseButton(button, keyUp: true);
+    }
+
+    public static void MouseWheel(int wheelDelta)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            LastSummary = $"mouse wheel {wheelDelta}: skipped, not Windows";
+            return;
+        }
+
+        var clamped = Math.Max(-960, Math.Min(960, wheelDelta));
+        var sent = SendMouse(0, 0, MouseEventWheel, unchecked((uint)clamped));
+        LastSummary = $"mouse wheel {clamped}: sent={sent}";
     }
 
     private static string SendSingle(string key, bool keyUp)
@@ -148,7 +162,7 @@ internal static class KeyboardOutput
         LastSummary = $"mouse {button} {(keyUp ? "up" : "down")}: sent={sent}";
     }
 
-    private static uint SendMouse(int dx, int dy, uint flags)
+    private static uint SendMouse(int dx, int dy, uint flags, uint mouseData = 0)
     {
         var input = new Input
         {
@@ -159,7 +173,7 @@ internal static class KeyboardOutput
                 {
                     X = dx,
                     Y = dy,
-                    MouseData = 0,
+                    MouseData = mouseData,
                     Flags = flags,
                     Time = 0,
                     ExtraInfo = UIntPtr.Zero

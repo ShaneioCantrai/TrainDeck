@@ -37,13 +37,14 @@ Keyboard output remains as a fallback for mapped buttons and for sessions where 
 
 ## Quick Start
 
-1. Install and start TrainDeck Bridge on Windows.
-2. Press **Set API Launch Opt** in the bridge.
-3. Restart Train Sim World from Steam.
-4. Install and open TrainDeck on the Android tablet.
-5. Tap the bridge address in the tablet header and set it to the Windows bridge address shown in the bridge app.
-6. Load into a drivable cab in TSW.
-7. Confirm the bridge says `TSW API: connected`.
+1. Download `TrainDeckBridgeSetup-*-win-x64.exe` and `TrainDeck-android-*-debug.apk` from the current release artifacts.
+2. Install and start TrainDeck Bridge on Windows.
+3. Press **Set API Launch Opt** in the bridge.
+4. Restart Train Sim World from Steam.
+5. Install and open TrainDeck on the Android tablet.
+6. Tap the bridge address in the tablet header and set it to the Windows bridge address shown in the bridge app.
+7. Load into a drivable cab in TSW.
+8. Confirm the bridge says `TSW API: connected`.
 
 ## Build Android
 
@@ -83,6 +84,22 @@ Publish a Windows build:
 ```powershell
 dotnet publish .\windows\TrainDeck.BridgeApp\TrainDeck.BridgeApp.csproj -c Release -r win-x64 --self-contained false -o .\dist\TrainDeckBridge
 ```
+
+## Build Release Artifacts
+
+TrainDeck release artifacts are built locally into `dist\release\packages`.
+The Windows bridge installer uses Inno Setup 6.
+
+```powershell
+.\scripts\build-release.ps1 -Version 0.1.0
+```
+
+The release package includes:
+
+- `TrainDeckBridgeSetup-*-win-x64.exe`: Windows installer for TrainDeck Bridge.
+- `TrainDeckBridge-*-win-x64.zip`: portable Windows bridge folder.
+- `TrainDeck-android-*-debug.apk`: Android tablet app for sideload testing.
+- `SHA256SUMS.txt`: checksums for the release artifacts.
 
 ## TSW HTTP API
 

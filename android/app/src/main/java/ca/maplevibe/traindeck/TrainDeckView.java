@@ -12,6 +12,7 @@ import android.view.MotionEvent;
 import android.view.View;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -35,6 +36,9 @@ public final class TrainDeckView extends View {
     private static final int MODE_WALK = 1;
     private static final float POINTER_SENSITIVITY = 1.15f;
     private static final float TOUCHPAD_LONG_PRESS_SLOP_DP = 10f;
+    private static final long TOUCHPAD_TAP_TIMEOUT_MS = 260L;
+    private static final float TOUCHPAD_TAP_SLOP_DP = 12f;
+    private static final float TOUCHPAD_SCROLL_SENSITIVITY = 0.42f;
 
     public interface Callback {
         void onButtonDown(int index, DeckProfile.ButtonDef button);
@@ -45,9 +49,13 @@ public final class TrainDeckView extends View {
 
         void onPointerMoved(float dx, float dy);
 
+        void onPointerScrolled(float dy);
+
         void onEditButton(int index, DeckProfile.ButtonDef button);
 
         void onDeckPageSelected(int page);
+
+        void onDeckRearranged();
 
         void onSettingsRequested();
 
@@ -99,6 +107,8 @@ public final class TrainDeckView extends View {
     private int activeButton = -1;
     private int activeAxis = -1;
     private int activeWalkButton = -1;
+    private boolean rearrangeMode = false;
+    private int rearrangeSelectedButton = -1;
     private boolean activeTouchpad = false;
     private boolean activeTouchpadDrag = false;
     private int activeTouchpadPointerId = -1;
@@ -106,6 +116,11 @@ public final class TrainDeckView extends View {
     private float lastPointerY = 0f;
     private float touchpadDownX = 0f;
     private float touchpadDownY = 0f;
+    private float lastScrollCentroidY = 0f;
+    private long touchpadDownAt = 0L;
+    private boolean touchpadTapCandidate = false;
+    private boolean touchpadTwoFingerTapCandidate = false;
+    private boolean touchpadTapConsumed = false;
     private Runnable touchpadDragRunnable;
     private Runnable commandHoldRunnable;
     private Runnable longPressRunnable;
@@ -139,6 +154,31 @@ public final class TrainDeckView extends View {
     public void setProfile(DeckProfile profile) {
         this.profile = profile;
         invalidate();
+    }
+
+    public void setRearrangeMode(boolean value) {
+        if (rearrangeMode == value) {
+            return;
+        }
+
+        clearLongPress();
+        clearCommandHold();
+        clearEmergencyHold();
+        releaseWalkControls();
+        if (value) {
+            deckMode = MODE_CAB;
+        }
+        rearrangeMode = value;
+        rearrangeSelectedButton = -1;
+        activeButton = -1;
+        activeAxis = -1;
+        throttleNeutralDetentActive = false;
+        performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+        invalidate();
+    }
+
+    public boolean isRearrangeMode() {
+        return rearrangeMode;
     }
 
     public void setTarget(String host, int port) {
@@ -179,6 +219,9 @@ public final class TrainDeckView extends View {
             afbEnabled = false;
             setToggleState("afb", false);
         }
+        if (activeAxis >= 0 && !isAxisAvailable(this.axes[activeAxis].control)) {
+            activeAxis = -1;
+        }
         invalidate();
     }
 
@@ -206,6 +249,10 @@ public final class TrainDeckView extends View {
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
                 if (logoRect.contains(x, y)) {
+                    if (rearrangeMode) {
+                        setRearrangeMode(false);
+                        return true;
+                    }
                     if (callback != null) {
                         callback.onMenuRequested();
                     }
@@ -213,6 +260,10 @@ public final class TrainDeckView extends View {
                 }
 
                 if (settingsRect.contains(x, y)) {
+                    if (rearrangeMode) {
+                        setRearrangeMode(false);
+                        return true;
+                    }
                     if (callback != null) {
                         callback.onSettingsRequested();
                     }
@@ -226,6 +277,24 @@ public final class TrainDeckView extends View {
 
                 if (walkModeRect.contains(x, y)) {
                     setDeckMode(MODE_WALK);
+                    return true;
+                }
+
+                if (rearrangeMode) {
+                    int page = hitPage(x, y);
+                    if (page >= 0 && profile != null && profile.setActivePage(page)) {
+                        rearrangeSelectedButton = -1;
+                        if (callback != null) {
+                            callback.onDeckPageSelected(page);
+                        }
+                        invalidate();
+                        return true;
+                    }
+
+                    int button = hitButton(x, y);
+                    if (button >= 0) {
+                        handleRearrangeButton(button);
+                    }
                     return true;
                 }
 
@@ -312,6 +381,7 @@ public final class TrainDeckView extends View {
                 clearEmergencyHold();
                 throttleNeutralDetentActive = false;
                 if (deckMode == MODE_WALK) {
+                    handleWalkUp(x, y);
                     releaseWalkControls();
                     invalidate();
                     return true;
@@ -354,16 +424,26 @@ public final class TrainDeckView extends View {
         canvas.drawText("TrainDeck", dp(18), dp(37), paint);
         paint.setFakeBoldText(false);
 
-        settingsRect.set(w - dp(58), dp(9), w - dp(14), dp(49));
-        paint.setColor(Color.rgb(27, 32, 37));
+        settingsRect.set(rearrangeMode ? w - dp(132) : w - dp(58), dp(9), w - dp(14), dp(49));
+        paint.setColor(rearrangeMode ? Color.rgb(73, 160, 120) : Color.rgb(27, 32, 37));
         canvas.drawRoundRect(settingsRect, dp(6), dp(6), paint);
         paint.setStyle(Paint.Style.STROKE);
-        paint.setStrokeWidth(dp(1));
-        paint.setColor(bridgeStatusColor());
+        paint.setStrokeWidth(rearrangeMode ? dp(2) : dp(1));
+        paint.setColor(rearrangeMode ? Color.WHITE : bridgeStatusColor());
         canvas.drawRoundRect(settingsRect, dp(6), dp(6), paint);
         paint.setStyle(Paint.Style.FILL);
-        paint.setColor(bridgeStatusColor());
-        canvas.drawCircle(settingsRect.centerX(), settingsRect.centerY(), dp(7), paint);
+        if (rearrangeMode) {
+            paint.setColor(Color.rgb(6, 22, 17));
+            paint.setTextAlign(Paint.Align.CENTER);
+            paint.setTextSize(dp(14));
+            paint.setFakeBoldText(true);
+            canvas.drawText("Exit Edit", settingsRect.centerX(), settingsRect.centerY() + dp(5), paint);
+            paint.setFakeBoldText(false);
+            paint.setTextAlign(Paint.Align.LEFT);
+        } else {
+            paint.setColor(bridgeStatusColor());
+            canvas.drawCircle(settingsRect.centerX(), settingsRect.centerY(), dp(7), paint);
+        }
 
         cabModeRect.set(dp(165), dp(9), dp(246), dp(49));
         walkModeRect.set(dp(253), dp(9), dp(334), dp(49));
@@ -452,20 +532,37 @@ public final class TrainDeckView extends View {
         float bottom = h * 0.55f;
         float gap = dp(12);
         float margin = dp(18);
-        float totalWeight = 0f;
+        List<AxisControl> visibleAxes = visibleAxes();
         for (AxisControl axis : axes) {
+            axis.rect.setEmpty();
+        }
+        if (visibleAxes.isEmpty()) {
+            return;
+        }
+
+        float totalWeight = 0f;
+        for (AxisControl axis : visibleAxes) {
             totalWeight += axis.weight;
         }
-        float unitW = (w - margin * 2 - gap * (axes.length - 1)) / totalWeight;
+        float unitW = (w - margin * 2 - gap * (visibleAxes.size() - 1)) / totalWeight;
 
         float left = margin;
-        for (int i = 0; i < axes.length; i++) {
-            AxisControl axis = axes[i];
+        for (AxisControl axis : visibleAxes) {
             float axisW = unitW * axis.weight;
             axis.rect.set(left, top, left + axisW, bottom);
-            drawAxis(canvas, axis, i == activeAxis);
+            drawAxis(canvas, axis, activeAxis >= 0 && axes[activeAxis] == axis);
             left += axisW + gap;
         }
+    }
+
+    private List<AxisControl> visibleAxes() {
+        List<AxisControl> visible = new ArrayList<>();
+        for (AxisControl axis : axes) {
+            if (isAxisAvailable(axis.control)) {
+                visible.add(axis);
+            }
+        }
+        return visible;
     }
 
     private void drawAxis(Canvas canvas, AxisControl axis, boolean active) {
@@ -730,7 +827,7 @@ public final class TrainDeckView extends View {
         paint.setFakeBoldText(false);
         paint.setColor(Color.rgb(174, 185, 195));
         paint.setTextSize(dp(14));
-        canvas.drawText("Pointer surface", walkTouchpadRect.centerX(), walkTouchpadRect.top + dp(68), paint);
+        canvas.drawText("Tap / drag / scroll", walkTouchpadRect.centerX(), walkTouchpadRect.top + dp(68), paint);
     }
 
     private void drawWalkButton(Canvas canvas, RectF r, WalkControl control, boolean active) {
@@ -793,7 +890,10 @@ public final class TrainDeckView extends View {
             r.set(margin + col * (bw + gap), top + row * (bh + gap),
                     margin + col * (bw + gap) + bw, top + row * (bh + gap) + bh);
             DeckProfile.ButtonDef def = profile.activeButtons().get(i);
-            drawButton(canvas, r, def, i == activeButton);
+            drawButton(canvas, r, def, i == activeButton || (rearrangeMode && i == rearrangeSelectedButton));
+            if (rearrangeMode) {
+                drawRearrangeSlot(canvas, r, i == rearrangeSelectedButton);
+            }
         }
     }
 
@@ -844,6 +944,14 @@ public final class TrainDeckView extends View {
         drawCenteredLabel(canvas, def.label, r);
         paint.setFakeBoldText(false);
         paint.setTextAlign(Paint.Align.LEFT);
+    }
+
+    private void drawRearrangeSlot(Canvas canvas, RectF r, boolean selected) {
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(selected ? dp(4) : dp(2));
+        paint.setColor(selected ? Color.WHITE : Color.rgb(73, 160, 120));
+        canvas.drawRoundRect(r, dp(6), dp(6), paint);
+        paint.setStyle(Paint.Style.FILL);
     }
 
     private void drawButtonBadge(Canvas canvas, RectF r, String command, boolean latched, boolean pulsing, boolean disabled) {
@@ -1016,11 +1124,14 @@ public final class TrainDeckView extends View {
     }
 
     private boolean isAxisAvailable(String control) {
+        if (!capabilitiesKnown) {
+            return true;
+        }
         if ("afb".equals(control)) {
             return isAfbAvailable();
         }
 
-        return true;
+        return supportedAxes.contains(control);
     }
 
     private boolean isStepAxis(String control) {
@@ -1129,6 +1240,34 @@ public final class TrainDeckView extends View {
         return -1;
     }
 
+    private void handleRearrangeButton(int button) {
+        if (profile == null || button < 0 || button >= profile.activeButtons().size()) {
+            return;
+        }
+
+        if (rearrangeSelectedButton < 0) {
+            rearrangeSelectedButton = button;
+            performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+            invalidate();
+            return;
+        }
+
+        if (rearrangeSelectedButton == button) {
+            rearrangeSelectedButton = -1;
+            performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+            invalidate();
+            return;
+        }
+
+        Collections.swap(profile.activeButtons(), rearrangeSelectedButton, button);
+        rearrangeSelectedButton = button;
+        performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+        if (callback != null) {
+            callback.onDeckRearranged();
+        }
+        invalidate();
+    }
+
     private boolean handleWalkDown(float x, float y, int pointerId) {
         int button = hitWalkButton(x, y);
         if (button >= 0) {
@@ -1149,6 +1288,11 @@ public final class TrainDeckView extends View {
             touchpadDownY = y;
             lastPointerX = x;
             lastPointerY = y;
+            lastScrollCentroidY = y;
+            touchpadDownAt = System.currentTimeMillis();
+            touchpadTapCandidate = true;
+            touchpadTwoFingerTapCandidate = false;
+            touchpadTapConsumed = false;
             scheduleTouchpadDragLock();
             performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
             invalidate();
@@ -1164,7 +1308,9 @@ public final class TrainDeckView extends View {
         }
 
         clearTouchpadDragLock();
-        beginTouchpadDrag();
+        endTouchpadDrag();
+        touchpadTwoFingerTapCandidate = true;
+        lastScrollCentroidY = touchpadCentroidY(event, -1);
         int primaryIndex = touchpadPointerIndex(event);
         if (primaryIndex >= 0) {
             lastPointerX = event.getX(primaryIndex);
@@ -1179,8 +1325,11 @@ public final class TrainDeckView extends View {
             return true;
         }
 
-        if (event.getPointerCount() <= 2) {
-            endTouchpadDrag();
+        if (touchpadTwoFingerTapCandidate && event.getPointerCount() == 2 && !touchpadTapConsumed) {
+            sendTouchpadClick("Right Click", "mouse_right");
+            touchpadTapConsumed = true;
+            touchpadTapCandidate = false;
+            touchpadTwoFingerTapCandidate = false;
         }
 
         int liftedPointerId = event.getPointerId(event.getActionIndex());
@@ -1191,6 +1340,10 @@ public final class TrainDeckView extends View {
                 lastPointerX = event.getX(replacementIndex);
                 lastPointerY = event.getY(replacementIndex);
             }
+        }
+
+        if (event.getPointerCount() <= 2) {
+            endTouchpadDrag();
         }
 
         invalidate();
@@ -1207,21 +1360,33 @@ public final class TrainDeckView extends View {
             return true;
         }
 
+        if (event.getPointerCount() >= 2) {
+            clearTouchpadDragLock();
+            endTouchpadDrag();
+            float centroidY = touchpadCentroidY(event, -1);
+            float scrollDelta = (centroidY - lastScrollCentroidY) * TOUCHPAD_SCROLL_SENSITIVITY;
+            lastScrollCentroidY = centroidY;
+            if (Math.abs(scrollDelta) >= 0.5f) {
+                touchpadTapCandidate = false;
+                touchpadTwoFingerTapCandidate = false;
+                if (callback != null) {
+                    callback.onPointerScrolled(scrollDelta);
+                }
+            }
+            return true;
+        }
+
         if (!activeTouchpadDrag) {
             float moved = distance(event.getX(pointerIndex), event.getY(pointerIndex), touchpadDownX, touchpadDownY);
             if (moved > dp(TOUCHPAD_LONG_PRESS_SLOP_DP)) {
                 clearTouchpadDragLock();
+                touchpadTapCandidate = false;
             }
         }
 
-        if (event.getPointerCount() >= 2) {
-            clearTouchpadDragLock();
-            beginTouchpadDrag();
-        } else {
-            // A one-finger long-press drag stays latched until the finger lifts.
-            if (!activeTouchpadDrag) {
-                endTouchpadDrag();
-            }
+        // A one-finger long-press drag stays latched until the finger lifts.
+        if (!activeTouchpadDrag) {
+            endTouchpadDrag();
         }
 
         float x = event.getX(pointerIndex);
@@ -1234,6 +1399,18 @@ public final class TrainDeckView extends View {
             callback.onPointerMoved(dx, dy);
         }
         return true;
+    }
+
+    private void handleWalkUp(float x, float y) {
+        if (!activeTouchpad || activeTouchpadDrag || touchpadTapConsumed || !touchpadTapCandidate) {
+            return;
+        }
+
+        long elapsed = System.currentTimeMillis() - touchpadDownAt;
+        float moved = distance(x, y, touchpadDownX, touchpadDownY);
+        if (elapsed <= TOUCHPAD_TAP_TIMEOUT_MS && moved <= dp(TOUCHPAD_TAP_SLOP_DP)) {
+            sendTouchpadClick("Left Click", "mouse_left");
+        }
     }
 
     private void scheduleTouchpadDragLock() {
@@ -1281,6 +1458,24 @@ public final class TrainDeckView extends View {
         return -1;
     }
 
+    private float touchpadCentroidY(MotionEvent event, int excludedIndex) {
+        float total = 0f;
+        int count = 0;
+        for (int i = 0; i < event.getPointerCount(); i++) {
+            if (i == excludedIndex) {
+                continue;
+            }
+            float x = event.getX(i);
+            float y = event.getY(i);
+            if (walkTouchpadRect.contains(x, y)) {
+                total += y;
+                count++;
+            }
+        }
+
+        return count == 0 ? lastScrollCentroidY : total / count;
+    }
+
     private void beginTouchpadDrag() {
         if (activeTouchpadDrag || callback == null) {
             activeTouchpadDrag = true;
@@ -1300,6 +1495,17 @@ public final class TrainDeckView extends View {
 
         activeTouchpadDrag = false;
         callback.onButtonUp(-1, new DeckProfile.ButtonDef("Mouse Drag", "mouse_left"));
+    }
+
+    private void sendTouchpadClick(String label, String command) {
+        if (callback == null) {
+            return;
+        }
+
+        DeckProfile.ButtonDef def = new DeckProfile.ButtonDef(label, command);
+        callback.onButtonDown(-1, def);
+        callback.onButtonUp(-1, def);
+        performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
     }
 
     private int hitWalkButton(float x, float y) {
@@ -1333,6 +1539,8 @@ public final class TrainDeckView extends View {
         clearCommandHold();
         clearEmergencyHold();
         releaseWalkControls();
+        rearrangeMode = false;
+        rearrangeSelectedButton = -1;
         if (activeButton >= 0 && profile != null && activeButton < profile.activeButtons().size() && callback != null) {
             callback.onButtonUp(activeButton, profile.activeButtons().get(activeButton));
         }
