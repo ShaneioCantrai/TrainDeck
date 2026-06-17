@@ -686,7 +686,8 @@ public final class TrainDeckView extends View {
         canvas.drawRoundRect(r, dp(8), dp(8), paint);
 
         paint.setColor(unavailable ? Color.rgb(38, 43, 48) : Color.rgb(54, 61, 68));
-        RectF slot = new RectF(r.centerX() - dp(7), axisTrackTop(axis), r.centerX() + dp(7), axisTrackBottom(axis));
+        float trackCenterX = axisTrackCenterX(axis);
+        RectF slot = new RectF(trackCenterX - dp(7), axisTrackTop(axis), trackCenterX + dp(7), axisTrackBottom(axis));
         canvas.drawRoundRect(slot, dp(7), dp(7), paint);
 
         paint.setStrokeWidth(dp(1));
@@ -694,7 +695,7 @@ public final class TrainDeckView extends View {
         int tickCount = axis.notches > 1 ? axis.notches - 1 : 4;
         for (int i = 0; i <= tickCount; i++) {
             float y = slot.top + slot.height() * i / tickCount;
-            canvas.drawLine(r.centerX() - dp(24), y, r.centerX() + dp(24), y, paint);
+            canvas.drawLine(trackCenterX - dp(24), y, trackCenterX + dp(24), y, paint);
         }
 
         float norm = (axis.value - axis.min) / (axis.max - axis.min);
@@ -724,7 +725,7 @@ public final class TrainDeckView extends View {
             canvas.drawText("N", r.right - dp(18), slot.centerY() + dp(4), paint);
             canvas.drawText("R", r.right - dp(18), slot.bottom + dp(4), paint);
         }
-        RectF knob = new RectF(r.left + dp(15), knobY - dp(17), r.right - dp(15), knobY + dp(17));
+        RectF knob = axisKnobRect(axis, knobY);
         paint.setColor(unavailable ? Color.rgb(61, 70, 78) : axis.color);
         canvas.drawRoundRect(knob, dp(10), dp(10), paint);
         if (active && !unavailable) {
@@ -891,15 +892,15 @@ public final class TrainDeckView extends View {
 
     private void drawAfbStepButtons(Canvas canvas, AxisControl axis, boolean unavailable) {
         RectF r = axis.rect;
-        float gap = dp(7);
-        float buttonTop = r.bottom - dp(68);
-        float buttonBottom = r.bottom - dp(36);
-        float buttonW = (r.width() - dp(26) * 2 - gap) / 2f;
-        axis.afbMinusRect.set(r.left + dp(26), buttonTop, r.left + dp(26) + buttonW, buttonBottom);
-        axis.afbPlusRect.set(axis.afbMinusRect.right + gap, buttonTop, r.right - dp(26), buttonBottom);
+        float buttonLeft = afbButtonLeft(axis);
+        float buttonRight = r.right - dp(24);
+        float buttonH = dp(60);
+        float buttonTop = r.top + dp(72);
+        axis.afbPlusRect.set(buttonLeft, buttonTop, buttonRight, buttonTop + buttonH);
+        axis.afbMinusRect.set(buttonLeft, axis.afbPlusRect.bottom + dp(26), buttonRight, axis.afbPlusRect.bottom + dp(26) + buttonH);
 
-        drawAfbStepButton(canvas, axis.afbMinusRect, "-", unavailable || afbSpeedKmh(axis.value) <= 0f);
         drawAfbStepButton(canvas, axis.afbPlusRect, "+", unavailable || afbSpeedKmh(axis.value) >= AFB_MAX_SPEED_KMH);
+        drawAfbStepButton(canvas, axis.afbMinusRect, "-", unavailable || afbSpeedKmh(axis.value) <= 0f);
     }
 
     private void drawAfbStepButton(Canvas canvas, RectF r, String label, boolean unavailable) {
@@ -1794,7 +1795,31 @@ public final class TrainDeckView extends View {
     }
 
     private float axisTrackBottom(AxisControl axis) {
-        return axis.rect.bottom - dp("afb".equals(axis.control) ? 82 : 34);
+        if ("afb".equals(axis.control)) {
+            return axis.rect.bottom - dp(66);
+        }
+
+        return axis.rect.bottom - dp(34);
+    }
+
+    private float axisTrackCenterX(AxisControl axis) {
+        if (!"afb".equals(axis.control)) {
+            return axis.rect.centerX();
+        }
+
+        return (axis.rect.left + dp(24) + afbButtonLeft(axis) - dp(18)) / 2f;
+    }
+
+    private RectF axisKnobRect(AxisControl axis, float knobY) {
+        if (!"afb".equals(axis.control)) {
+            return new RectF(axis.rect.left + dp(15), knobY - dp(17), axis.rect.right - dp(15), knobY + dp(17));
+        }
+
+        return new RectF(axis.rect.left + dp(24), knobY - dp(17), afbButtonLeft(axis) - dp(18), knobY + dp(17));
+    }
+
+    private float afbButtonLeft(AxisControl axis) {
+        return axis.rect.right - dp(100);
     }
 
     private void handleStepAxisTouch(AxisControl axis, float x, float y) {
