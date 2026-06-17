@@ -47,6 +47,7 @@ internal sealed class BridgeService : IDisposable
     private string speedHoldLastLog = "";
     private double? lastTelemetrySpeedKmh;
     private TswSpeedLimitTelemetry? lastTelemetrySpeedLimit;
+    private TswSpeedLimitTelemetry? lastTelemetryNextSpeedLimit;
     private double? previousTelemetrySpeedKmh;
     private TswSpeedLimitTelemetry? previousTelemetrySpeedLimit;
     private DateTimeOffset lastScenarioResetDetectedAt = DateTimeOffset.MinValue;
@@ -355,10 +356,15 @@ internal sealed class BridgeService : IDisposable
                 }
                 break;
             case "td_speed_hold_set_limit":
-            case "td_speed_hold_set_next":
-                if (lastTelemetrySpeedLimit is { } limit)
+                if (lastTelemetrySpeedLimit is { } currentLimit)
                 {
-                    SetSpeedHoldTarget(limit.NextSpeedLimitKmh, "speed limit");
+                    SetSpeedHoldTarget(currentLimit.NextSpeedLimitKmh, "speed limit");
+                }
+                break;
+            case "td_speed_hold_set_next":
+                if (lastTelemetryNextSpeedLimit is { } nextLimit)
+                {
+                    SetSpeedHoldTarget(nextLimit.NextSpeedLimitKmh, "next speed limit");
                 }
                 break;
             case "td_speed_hold_minus_5":
@@ -496,29 +502,31 @@ internal sealed class BridgeService : IDisposable
 
     private double CalculateAutoPilotTargetKmh(double currentSpeedKmh)
     {
-        if (lastTelemetrySpeedLimit is not { } limit)
+        var target = speedHoldCruiseTargetKmh;
+
+        if (lastTelemetrySpeedLimit is { } currentLimit)
         {
-            return speedHoldCruiseTargetKmh;
+            target = Math.Min(target, ClampSpeedHoldTarget(currentLimit.NextSpeedLimitKmh - AutoPilotLimitBufferKmh));
         }
 
-        var limitTargetKmh = ClampSpeedHoldTarget(limit.NextSpeedLimitKmh - AutoPilotLimitBufferKmh);
-        if (limitTargetKmh >= speedHoldCruiseTargetKmh)
+        if (lastTelemetryNextSpeedLimit is not { } nextLimit)
         {
-            return speedHoldCruiseTargetKmh;
+            return target;
         }
 
-        if (currentSpeedKmh <= limitTargetKmh + SpeedHoldDeadbandKmh)
+        var nextTargetKmh = ClampSpeedHoldTarget(nextLimit.NextSpeedLimitKmh - AutoPilotLimitBufferKmh);
+        if (nextTargetKmh >= target)
         {
-            return limitTargetKmh;
+            return target;
         }
 
-        var brakingDistance = BrakeCurveMeters(currentSpeedKmh, limitTargetKmh);
-        if (limit.DistanceMeters <= brakingDistance)
+        if (currentSpeedKmh <= nextTargetKmh + SpeedHoldDeadbandKmh)
         {
-            return limitTargetKmh;
+            return nextTargetKmh;
         }
 
-        return Math.Min(speedHoldCruiseTargetKmh, Math.Max(currentSpeedKmh, limitTargetKmh));
+        var brakingDistance = BrakeCurveMeters(currentSpeedKmh, nextTargetKmh);
+        return nextLimit.DistanceMeters <= brakingDistance ? nextTargetKmh : target;
     }
 
     private static double BrakeCurveMeters(double currentSpeedKmh, double targetSpeedKmh)
@@ -928,20 +936,25 @@ internal sealed class BridgeService : IDisposable
             return;
         }
 
-        var speedLimit = await tswApi.TryGetSpeedLimitTelemetryAsync(token);
-        await DetectScenarioRestartAsync(speedKmh.Value, speedLimit);
+        var speedLimits = await tswApi.TryGetSpeedLimitsTelemetryAsync(token);
+        var speedLimit = speedLimits?.Current;
+        var nextSpeedLimit = speedLimits?.Next;
+        await DetectScenarioRestartAsync(speedKmh.Value, nextSpeedLimit ?? speedLimit);
         lastTelemetrySpeedKmh = speedKmh.Value;
         lastTelemetrySpeedLimit = speedLimit;
+        lastTelemetryNextSpeedLimit = nextSpeedLimit;
         previousTelemetrySpeedKmh = speedKmh.Value;
-        previousTelemetrySpeedLimit = speedLimit;
+        previousTelemetrySpeedLimit = nextSpeedLimit ?? speedLimit;
         await UpdateSpeedHoldAsync(speedKmh.Value);
         var payload = new TrainDeckBridgeMessage
         {
             Type = "telemetry",
             SpeedKmh = speedKmh.Value,
             SpeedMph = speedKmh.Value * 0.621371,
-            NextSpeedLimitKmh = speedLimit?.NextSpeedLimitKmh,
-            NextSpeedLimitDistanceM = speedLimit?.DistanceMeters,
+            SpeedLimitKmh = speedLimit?.NextSpeedLimitKmh,
+            SpeedLimitDistanceM = speedLimit?.DistanceMeters,
+            NextSpeedLimitKmh = nextSpeedLimit?.NextSpeedLimitKmh,
+            NextSpeedLimitDistanceM = nextSpeedLimit?.DistanceMeters,
             SpeedHoldArmed = speedHoldArmed,
             SpeedHoldAutoPilot = speedHoldAutoPilot,
             SpeedHoldTargetKmh = speedHoldArmed ? speedHoldTargetKmh : null,
@@ -1099,4 +1112,5 @@ internal sealed record BridgeLogEventArgs(string Level, string Message);
 internal sealed record BridgeStatusEventArgs(bool Running, int Port, IPEndPoint? LastRemote);
 internal sealed record AxisLog(double Value, DateTimeOffset At);
 internal sealed record PairedCommand(string ToggleCommand, string PrimaryCommand, string AlternateCommand);
+internal sealed record TswSpeedLimitsTelemetry(TswSpeedLimitTelemetry? Current, TswSpeedLimitTelemetry? Next);
 internal sealed record TswSpeedLimitTelemetry(double NextSpeedLimitKmh, double DistanceMeters);

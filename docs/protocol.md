@@ -121,6 +121,8 @@ AFB controls.
   "type": "telemetry",
   "speedKmh": 72.5,
   "speedMph": 45.0,
+  "speedLimitKmh": 80.0,
+  "speedLimitDistanceM": 0.0,
   "nextSpeedLimitKmh": 40.0,
   "nextSpeedLimitDistanceM": 1232.6,
   "speedHoldArmed": true,
@@ -132,9 +134,10 @@ AFB controls.
 }
 ```
 
-Speed telemetry comes from the TSW HTTP API. `nextSpeedLimitKmh` and
-`nextSpeedLimitDistanceM` are omitted when the Driver Aid API does not currently
-report an upcoming speed limit.
+Speed telemetry comes from the TSW HTTP API. `speedLimitKmh` describes the
+current limit TrainDeck should obey. `nextSpeedLimitKmh` and
+`nextSpeedLimitDistanceM` describe the upcoming speed limit ahead and are omitted
+when the Driver Aid API does not currently report one.
 
 `speedHold*` fields describe TrainDeck's own experimental speed hold assist.
 The tablet can send the following high-level button commands to arm, disarm, and
@@ -144,7 +147,7 @@ adjust it:
 - `td_speed_hold_auto_pilot`
 - `td_speed_hold_set_current`
 - `td_speed_hold_set_limit`
-- `td_speed_hold_set_next` (legacy alias for `td_speed_hold_set_limit`)
+- `td_speed_hold_set_next`
 - `td_speed_hold_minus_5`
 - `td_speed_hold_minus_1`
 - `td_speed_hold_plus_1`

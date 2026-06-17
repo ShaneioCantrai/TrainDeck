@@ -304,6 +304,8 @@ public class MainActivity extends Activity implements TrainDeckView.Callback {
             runOnUiThread(() -> deckView.setCapabilities(axes, buttons, axisOptions));
         } else if ("telemetry".equalsIgnoreCase(type)) {
             double speedKmh = message.optDouble("speedKmh", Double.NaN);
+            double speedLimitKmh = message.optDouble("speedLimitKmh", Double.NaN);
+            double speedLimitDistanceM = message.optDouble("speedLimitDistanceM", Double.NaN);
             double nextSpeedLimitKmh = message.optDouble("nextSpeedLimitKmh", Double.NaN);
             double nextSpeedLimitDistanceM = message.optDouble("nextSpeedLimitDistanceM", Double.NaN);
             boolean speedHoldArmed = message.optBoolean("speedHoldArmed", false);
@@ -314,6 +316,8 @@ public class MainActivity extends Activity implements TrainDeckView.Callback {
             if (!Double.isNaN(speedKmh)) {
                 runOnUiThread(() -> deckView.setTelemetry(
                         (float) speedKmh,
+                        Double.isNaN(speedLimitKmh) ? Float.NaN : (float) speedLimitKmh,
+                        Double.isNaN(speedLimitDistanceM) ? Float.NaN : (float) speedLimitDistanceM,
                         Double.isNaN(nextSpeedLimitKmh) ? Float.NaN : (float) nextSpeedLimitKmh,
                         Double.isNaN(nextSpeedLimitDistanceM) ? Float.NaN : (float) nextSpeedLimitDistanceM,
                         speedHoldArmed,

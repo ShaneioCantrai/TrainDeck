@@ -191,7 +191,7 @@ internal sealed class TswHttpApiClient : IDisposable
         return speedMs is null ? null : Math.Abs(speedMs.Value) * 3.6;
     }
 
-    public async Task<TswSpeedLimitTelemetry?> TryGetSpeedLimitTelemetryAsync(CancellationToken token)
+    public async Task<TswSpeedLimitsTelemetry?> TryGetSpeedLimitsTelemetryAsync(CancellationToken token)
     {
         if (!IsReady || string.IsNullOrWhiteSpace(apiKey))
         {
@@ -228,22 +228,30 @@ internal sealed class TswHttpApiClient : IDisposable
                 TryReadSpeedLimitValue(values, "nextSpeedLimit"),
                 TryReadDouble(values, "distanceToNextSpeedLimit"));
 
-            if (currentLimit is null)
-            {
-                return nextLimit;
-            }
-
-            if (nextLimit is null || nextLimit.NextSpeedLimitKmh >= currentLimit.NextSpeedLimitKmh)
-            {
-                return currentLimit;
-            }
-
-            return nextLimit;
+            return currentLimit is null && nextLimit is null
+                ? null
+                : new TswSpeedLimitsTelemetry(currentLimit, nextLimit);
         }
         catch
         {
             return null;
         }
+    }
+
+    public async Task<TswSpeedLimitTelemetry?> TryGetSpeedLimitTelemetryAsync(CancellationToken token)
+    {
+        var limits = await TryGetSpeedLimitsTelemetryAsync(token);
+        if (limits?.Current is null)
+        {
+            return limits?.Next;
+        }
+
+        if (limits.Next is null || limits.Next.NextSpeedLimitKmh >= limits.Current.NextSpeedLimitKmh)
+        {
+            return limits.Current;
+        }
+
+        return limits.Next;
     }
 
     private static double NextCycleValue(IReadOnlyList<double> cycleValues, double? current)

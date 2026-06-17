@@ -81,6 +81,7 @@ public final class TrainDeckView extends View {
     private final RectF speedHoldAutoPilotRect = new RectF();
     private final RectF speedHoldToggleRect = new RectF();
     private final RectF speedHoldCurrentRect = new RectF();
+    private final RectF speedHoldLimitRect = new RectF();
     private final RectF speedHoldNextRect = new RectF();
     private final RectF speedHoldMinus5Rect = new RectF();
     private final RectF speedHoldMinus1Rect = new RectF();
@@ -146,6 +147,8 @@ public final class TrainDeckView extends View {
     private boolean capabilitiesKnown = false;
     private float lastAfbValue = 80f / AFB_MAX_SPEED_KMH;
     private float speedKmh = Float.NaN;
+    private float speedLimitKmh = Float.NaN;
+    private float speedLimitDistanceM = Float.NaN;
     private float nextSpeedLimitKmh = Float.NaN;
     private float nextSpeedLimitDistanceM = Float.NaN;
     private boolean speedHoldArmed = false;
@@ -200,12 +203,16 @@ public final class TrainDeckView extends View {
     }
 
     public void setSpeedKmh(float value) {
-        setTelemetry(value, Float.NaN, Float.NaN, false, false, Float.NaN, Float.NaN, "off");
+        setTelemetry(value, Float.NaN, Float.NaN, Float.NaN, Float.NaN, false, false, Float.NaN, Float.NaN, "off");
     }
 
-    public void setTelemetry(float currentSpeedKmh, float upcomingSpeedLimitKmh, float upcomingSpeedLimitDistanceM,
+    public void setTelemetry(float currentSpeedKmh,
+                             float currentSpeedLimitKmh, float currentSpeedLimitDistanceM,
+                             float upcomingSpeedLimitKmh, float upcomingSpeedLimitDistanceM,
                              boolean holdArmed, boolean holdAutoPilot, float holdTargetKmh, float holdOutput, String holdMode) {
         speedKmh = currentSpeedKmh;
+        speedLimitKmh = currentSpeedLimitKmh;
+        speedLimitDistanceM = currentSpeedLimitDistanceM;
         nextSpeedLimitKmh = upcomingSpeedLimitKmh;
         nextSpeedLimitDistanceM = upcomingSpeedLimitDistanceM;
         speedHoldArmed = holdArmed;
@@ -656,11 +663,13 @@ public final class TrainDeckView extends View {
 
     private void drawInfoPill(Canvas canvas, RectF pill, boolean speedPill, int index) {
         boolean fresh = !Float.isNaN(speedKmh) && System.currentTimeMillis() - speedUpdatedAt <= 2500L;
-        boolean nextLimitPill = index == 1;
-        boolean speedHoldPill = index == 2;
+        boolean limitPill = index == 1;
+        boolean nextLimitPill = index == 2;
+        boolean speedHoldPill = index == 3;
+        boolean limitFresh = fresh && !Float.isNaN(speedLimitKmh);
         boolean nextLimitFresh = fresh && !Float.isNaN(nextSpeedLimitKmh) && !Float.isNaN(nextSpeedLimitDistanceM);
         boolean speedHoldFresh = fresh && speedHoldArmed && !Float.isNaN(speedHoldTargetKmh);
-        boolean active = (speedPill && fresh) || (nextLimitPill && nextLimitFresh) || (speedHoldPill && speedHoldFresh);
+        boolean active = (speedPill && fresh) || (limitPill && limitFresh) || (nextLimitPill && nextLimitFresh) || (speedHoldPill && speedHoldFresh);
         paint.setColor(active ? Color.rgb(34, 57, 45) : Color.rgb(23, 30, 36));
         canvas.drawRoundRect(pill, dp(8), dp(8), paint);
 
@@ -682,6 +691,17 @@ public final class TrainDeckView extends View {
             paint.setColor(fresh ? Color.rgb(174, 219, 190) : Color.rgb(126, 136, 146));
             paint.setTextSize(dp(9));
             canvas.drawText("KM/H", pill.centerX(), pill.bottom - dp(8), paint);
+        } else if (limitPill) {
+            paint.setColor(limitFresh ? Color.WHITE : Color.rgb(126, 136, 146));
+            paint.setTextSize(dp(20));
+            paint.setFakeBoldText(true);
+            String value = limitFresh ? String.format(Locale.US, "%.0f", Math.max(0f, speedLimitKmh)) : "--";
+            canvas.drawText(value, pill.centerX(), pill.centerY() - dp(2), paint);
+            paint.setFakeBoldText(false);
+
+            paint.setColor(limitFresh ? Color.rgb(174, 219, 190) : Color.rgb(126, 136, 146));
+            paint.setTextSize(dp(8));
+            canvas.drawText("LIMIT", pill.centerX(), pill.bottom - dp(8), paint);
         } else if (nextLimitPill) {
             paint.setColor(nextLimitFresh ? Color.WHITE : Color.rgb(126, 136, 146));
             paint.setTextSize(dp(20));
@@ -692,7 +712,7 @@ public final class TrainDeckView extends View {
 
             paint.setColor(nextLimitFresh ? Color.rgb(174, 219, 190) : Color.rgb(126, 136, 146));
             paint.setTextSize(dp(8));
-            canvas.drawText(nextLimitFresh ? formatDistance(nextSpeedLimitDistanceM) : "LIMIT", pill.centerX(), pill.bottom - dp(8), paint);
+            canvas.drawText(nextLimitFresh ? formatDistance(nextSpeedLimitDistanceM) : "NEXT", pill.centerX(), pill.bottom - dp(8), paint);
         } else if (speedHoldPill) {
             speedHoldShortcutRect.set(pill);
             paint.setColor(speedHoldFresh ? Color.WHITE : Color.rgb(126, 136, 146));
@@ -1157,6 +1177,7 @@ public final class TrainDeckView extends View {
         throttleInfoRect.setEmpty();
         speedHoldShortcutRect.setEmpty();
         speedHoldAutoPilotRect.setEmpty();
+        speedHoldLimitRect.setEmpty();
 
         boolean fresh = !Float.isNaN(speedKmh) && System.currentTimeMillis() - speedUpdatedAt <= 2500L;
         float margin = dp(22);
@@ -1171,9 +1192,15 @@ public final class TrainDeckView extends View {
         drawAssistMetric(canvas, currentRect, "CURRENT", fresh ? String.format(Locale.US, "%.0f", Math.max(0f, speedKmh)) : "--", "KM/H", fresh);
         drawAssistMetric(canvas, targetRect, "TARGET", speedHoldArmed && !Float.isNaN(speedHoldTargetKmh)
                 ? String.format(Locale.US, "%.0f", speedHoldTargetKmh) : "--", "KM/H", speedHoldArmed);
+        boolean limitFresh = fresh && !Float.isNaN(speedLimitKmh);
         boolean nextFresh = fresh && !Float.isNaN(nextSpeedLimitKmh) && !Float.isNaN(nextSpeedLimitDistanceM);
-        drawAssistMetric(canvas, nextRect, "LIMIT", nextFresh ? String.format(Locale.US, "%.0f", nextSpeedLimitKmh) : "--",
-                nextFresh ? formatDistance(nextSpeedLimitDistanceM) : "LIMIT", nextFresh);
+        float splitGap = dp(10);
+        RectF limitRect = new RectF(nextRect.left, nextRect.top, nextRect.centerX() - splitGap / 2f, nextRect.bottom);
+        RectF nextLimitRect = new RectF(nextRect.centerX() + splitGap / 2f, nextRect.top, nextRect.right, nextRect.bottom);
+        drawAssistMetric(canvas, limitRect, "LIMIT", limitFresh ? String.format(Locale.US, "%.0f", speedLimitKmh) : "--",
+                "KM/H", limitFresh);
+        drawAssistMetric(canvas, nextLimitRect, "NEXT LIMIT", nextFresh ? String.format(Locale.US, "%.0f", nextSpeedLimitKmh) : "--",
+                nextFresh ? formatDistance(nextSpeedLimitDistanceM) : "NEXT", nextFresh);
 
         float statusTop = top + metricH + gap;
         RectF statusRect = new RectF(margin, statusTop, w - margin - dp(374), statusTop + dp(74));
@@ -1211,7 +1238,9 @@ public final class TrainDeckView extends View {
 
         speedHoldToggleRect.set(margin, buttonTop, margin + colW * 2 + colGap, buttonTop + rowH);
         speedHoldCurrentRect.set(speedHoldToggleRect.right + colGap, buttonTop, speedHoldToggleRect.right + colGap + colW, buttonTop + rowH);
-        speedHoldNextRect.set(speedHoldCurrentRect.right + colGap, buttonTop, w - margin, buttonTop + rowH);
+        RectF limitActionRect = new RectF(speedHoldCurrentRect.right + colGap, buttonTop, w - margin, buttonTop + rowH);
+        speedHoldLimitRect.set(limitActionRect.left, buttonTop, limitActionRect.centerX() - colGap / 2f, buttonTop + rowH);
+        speedHoldNextRect.set(limitActionRect.centerX() + colGap / 2f, buttonTop, limitActionRect.right, buttonTop + rowH);
 
         float row2Top = buttonTop + rowH + rowGap;
         speedHoldMinus5Rect.set(margin, row2Top, margin + colW, row2Top + rowH);
@@ -1221,7 +1250,8 @@ public final class TrainDeckView extends View {
 
         drawAssistButton(canvas, speedHoldToggleRect, speedHoldArmed ? "DISARM" : "ARM", speedHoldArmed, fresh);
         drawAssistButton(canvas, speedHoldCurrentRect, "SET CURRENT", false, fresh);
-        drawAssistButton(canvas, speedHoldNextRect, "SET LIMIT", false, nextFresh);
+        drawAssistButton(canvas, speedHoldLimitRect, "SET\nLIMIT", false, limitFresh);
+        drawAssistButton(canvas, speedHoldNextRect, "SET\nNEXT LIMIT", false, nextFresh);
         drawAssistButton(canvas, speedHoldMinus5Rect, "-5", false, true);
         drawAssistButton(canvas, speedHoldMinus1Rect, "-1", false, true);
         drawAssistButton(canvas, speedHoldPlus1Rect, "+1", false, true);
@@ -1272,13 +1302,20 @@ public final class TrainDeckView extends View {
         paint.setStyle(Paint.Style.FILL);
         paint.setTextAlign(Paint.Align.CENTER);
         paint.setFakeBoldText(true);
-        paint.setTextSize(label.length() > 8 ? dp(15) : dp(24));
+        boolean multiline = label.contains("\n");
+        paint.setTextSize(multiline ? dp(14) : label.length() > 8 ? dp(15) : dp(24));
         paint.setColor(!enabled
                 ? Color.rgb(108, 119, 128)
                 : active
                 ? Color.rgb(6, 22, 17)
                 : Color.rgb(218, 226, 233));
-        canvas.drawText(fitText(label, r.width() - dp(20), paint.getTextSize()), r.centerX(), r.centerY() + dp(8), paint);
+        if (multiline) {
+            String[] lines = label.split("\\n", 2);
+            canvas.drawText(fitText(lines[0], r.width() - dp(16), paint.getTextSize()), r.centerX(), r.centerY() - dp(5), paint);
+            canvas.drawText(fitText(lines[1], r.width() - dp(16), paint.getTextSize()), r.centerX(), r.centerY() + dp(15), paint);
+        } else {
+            canvas.drawText(fitText(label, r.width() - dp(20), paint.getTextSize()), r.centerX(), r.centerY() + dp(8), paint);
+        }
         paint.setFakeBoldText(false);
         paint.setTextAlign(Paint.Align.LEFT);
     }
@@ -1739,8 +1776,13 @@ public final class TrainDeckView extends View {
             return true;
         }
 
-        if (speedHoldNextRect.contains(x, y)) {
+        if (speedHoldLimitRect.contains(x, y)) {
             sendAssistButton("Set Limit", "td_speed_hold_set_limit");
+            return true;
+        }
+
+        if (speedHoldNextRect.contains(x, y)) {
+            sendAssistButton("Set Next Limit", "td_speed_hold_set_next");
             return true;
         }
 

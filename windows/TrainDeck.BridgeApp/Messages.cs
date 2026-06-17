@@ -71,6 +71,12 @@ internal sealed class TrainDeckBridgeMessage
     [JsonPropertyName("speedMph")]
     public double? SpeedMph { get; set; }
 
+    [JsonPropertyName("speedLimitKmh")]
+    public double? SpeedLimitKmh { get; set; }
+
+    [JsonPropertyName("speedLimitDistanceM")]
+    public double? SpeedLimitDistanceM { get; set; }
+
     [JsonPropertyName("nextSpeedLimitKmh")]
     public double? NextSpeedLimitKmh { get; set; }
 
