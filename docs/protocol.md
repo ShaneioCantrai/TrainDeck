@@ -143,7 +143,8 @@ adjust it:
 - `td_speed_hold_toggle`
 - `td_speed_hold_auto_pilot`
 - `td_speed_hold_set_current`
-- `td_speed_hold_set_next`
+- `td_speed_hold_set_limit`
+- `td_speed_hold_set_next` (legacy alias for `td_speed_hold_set_limit`)
 - `td_speed_hold_minus_5`
 - `td_speed_hold_minus_1`
 - `td_speed_hold_plus_1`

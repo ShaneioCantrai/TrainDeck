@@ -354,10 +354,11 @@ internal sealed class BridgeService : IDisposable
                     SetSpeedHoldTarget(current, "current speed");
                 }
                 break;
+            case "td_speed_hold_set_limit":
             case "td_speed_hold_set_next":
                 if (lastTelemetrySpeedLimit is { } limit)
                 {
-                    SetSpeedHoldTarget(limit.NextSpeedLimitKmh, "next limit");
+                    SetSpeedHoldTarget(limit.NextSpeedLimitKmh, "speed limit");
                 }
                 break;
             case "td_speed_hold_minus_5":
@@ -1062,6 +1063,7 @@ internal sealed class BridgeService : IDisposable
                 "td_speed_hold_toggle",
                 "td_speed_hold_auto_pilot",
                 "td_speed_hold_set_current",
+                "td_speed_hold_set_limit",
                 "td_speed_hold_set_next",
                 "td_speed_hold_minus_5",
                 "td_speed_hold_minus_1",

@@ -1221,7 +1221,7 @@ public final class TrainDeckView extends View {
 
         drawAssistButton(canvas, speedHoldToggleRect, speedHoldArmed ? "DISARM" : "ARM", speedHoldArmed, fresh);
         drawAssistButton(canvas, speedHoldCurrentRect, "SET CURRENT", false, fresh);
-        drawAssistButton(canvas, speedHoldNextRect, "SET NEXT", false, nextFresh);
+        drawAssistButton(canvas, speedHoldNextRect, "SET LIMIT", false, nextFresh);
         drawAssistButton(canvas, speedHoldMinus5Rect, "-5", false, true);
         drawAssistButton(canvas, speedHoldMinus1Rect, "-1", false, true);
         drawAssistButton(canvas, speedHoldPlus1Rect, "+1", false, true);
@@ -1740,7 +1740,7 @@ public final class TrainDeckView extends View {
         }
 
         if (speedHoldNextRect.contains(x, y)) {
-            sendAssistButton("Set Next", "td_speed_hold_set_next");
+            sendAssistButton("Set Limit", "td_speed_hold_set_limit");
             return true;
         }
 
