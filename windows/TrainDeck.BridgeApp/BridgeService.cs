@@ -14,14 +14,16 @@ internal sealed class BridgeService : IDisposable
     private const double SpeedHoldDeadbandKmh = 1.0;
     private const double SpeedHoldMinTargetKmh = 0.0;
     private const double SpeedHoldMaxTargetKmh = 250.0;
-    private const double SpeedHoldPowerMax = 0.98;
-    private const double SpeedHoldPowerBase = 0.18;
-    private const double SpeedHoldPowerGain = 0.020;
-    private const double SpeedHoldPowerRampKmh = 35.0;
+    private const double SpeedHoldPowerMax = 1.0;
+    private const double SpeedHoldFeatherHoldKmh = 0.2;
+    private const double SpeedHoldFeatherWindowKmh = 4.0;
+    private const double SpeedHoldFullPowerErrorKmh = 8.0;
     private const double AutoPilotLimitBufferKmh = 1.0;
-    private const double AutoPilotBrakeDecelMps2 = 0.48;
-    private const double AutoPilotReactionSeconds = 4.0;
-    private const double AutoPilotBrakeMarginMeters = 35.0;
+    private const double AutoPilotBrakeDecelMps2 = 0.62;
+    private const double AutoPilotReactionSeconds = 2.0;
+    private const double AutoPilotBrakeMarginMeters = 25.0;
+    private const double AutoPilotStopSignalBufferMeters = 15.0;
+    private const double AutoPilotUpcomingLimitHoldWindowKmh = 3.0;
     private const double ScenarioResetStoppedSpeedKmh = 2.0;
     private const double ScenarioResetSuddenSpeedDropKmh = 8.0;
     private const double ScenarioResetLimitDistanceJumpMeters = 400.0;
@@ -53,6 +55,8 @@ internal sealed class BridgeService : IDisposable
     private double? lastTelemetrySpeedKmh;
     private TswSpeedLimitTelemetry? lastTelemetrySpeedLimit;
     private TswSpeedLimitTelemetry? lastTelemetryNextSpeedLimit;
+    private string? lastTelemetrySignalAspect;
+    private double? lastTelemetrySignalDistanceMeters;
     private double? previousTelemetrySpeedKmh;
     private TswSpeedLimitTelemetry? previousTelemetrySpeedLimit;
     private DateTimeOffset lastScenarioResetDetectedAt = DateTimeOffset.MinValue;
@@ -574,22 +578,7 @@ internal sealed class BridgeService : IDisposable
         }
 
         var error = speedHoldTargetKmh - currentSpeedKmh;
-        var output = SpeedHoldNeutral;
-        var mode = "hold";
-        if (error < -SpeedHoldDeadbandKmh)
-        {
-            var overspeed = Math.Min(25, Math.Abs(error) - SpeedHoldDeadbandKmh);
-            output = SpeedHoldNeutral - Math.Min(0.38, 0.08 + overspeed * 0.018);
-            mode = "brake";
-        }
-        else if (error > SpeedHoldDeadbandKmh)
-        {
-            var underspeed = Math.Min(SpeedHoldPowerRampKmh, error - SpeedHoldDeadbandKmh);
-            output = SpeedHoldNeutral + Math.Min(
-                SpeedHoldPowerMax - SpeedHoldNeutral,
-                SpeedHoldPowerBase + underspeed * SpeedHoldPowerGain);
-            mode = "power";
-        }
+        var (output, mode) = CalculateSpeedHoldOutput(error);
 
         output = Math.Clamp(output, 0.08, SpeedHoldPowerMax);
         speedHoldMode = speedHoldAutoPilot ? $"auto-{mode}" : mode;
@@ -615,33 +604,104 @@ internal sealed class BridgeService : IDisposable
             target = Math.Min(target, ClampSpeedHoldTarget(currentLimit.NextSpeedLimitKmh - AutoPilotLimitBufferKmh));
         }
 
-        if (lastTelemetryNextSpeedLimit is not { } nextLimit)
+        if (lastTelemetryNextSpeedLimit is { } nextLimit)
         {
-            return target;
+            var nextTargetKmh = ClampSpeedHoldTarget(nextLimit.NextSpeedLimitKmh - AutoPilotLimitBufferKmh);
+            if (nextTargetKmh < target)
+            {
+                target = currentSpeedKmh >= nextTargetKmh - AutoPilotUpcomingLimitHoldWindowKmh
+                    ? Math.Min(target, nextTargetKmh)
+                    : ApplyBrakeCurveTarget(target, currentSpeedKmh, nextTargetKmh, nextLimit.DistanceMeters);
+            }
         }
 
-        var nextTargetKmh = ClampSpeedHoldTarget(nextLimit.NextSpeedLimitKmh - AutoPilotLimitBufferKmh);
-        if (nextTargetKmh >= target)
+        if (IsStopSignal(lastTelemetrySignalAspect)
+            && lastTelemetrySignalDistanceMeters is { } signalDistanceMeters
+            && signalDistanceMeters > 0)
         {
-            return target;
+            target = signalDistanceMeters <= AutoPilotStopSignalBufferMeters
+                ? 0
+                : ApplyStopSignalCurveTarget(target, currentSpeedKmh, signalDistanceMeters - AutoPilotStopSignalBufferMeters);
         }
 
-        var brakingDistance = BrakeCurveMeters(currentSpeedKmh, nextTargetKmh);
-        return nextLimit.DistanceMeters <= brakingDistance ? nextTargetKmh : target;
+        return ClampSpeedHoldTarget(target);
     }
 
-    private static double BrakeCurveMeters(double currentSpeedKmh, double targetSpeedKmh)
+    private static (double Output, string Mode) CalculateSpeedHoldOutput(double errorKmh)
+    {
+        if (errorKmh < -SpeedHoldDeadbandKmh)
+        {
+            var overspeed = Math.Min(25, Math.Abs(errorKmh) - SpeedHoldDeadbandKmh);
+            return (SpeedHoldNeutral - Math.Min(0.42, 0.06 + overspeed * 0.024), "brake");
+        }
+
+        if (errorKmh <= SpeedHoldFeatherHoldKmh)
+        {
+            return (SpeedHoldNeutral, "hold");
+        }
+
+        if (errorKmh < SpeedHoldDeadbandKmh)
+        {
+            return (Lerp(SpeedHoldNeutral, 0.60, (errorKmh - SpeedHoldFeatherHoldKmh) / (SpeedHoldDeadbandKmh - SpeedHoldFeatherHoldKmh)), "feather");
+        }
+
+        if (errorKmh <= 2.0)
+        {
+            return (Lerp(0.60, 0.75, (errorKmh - SpeedHoldDeadbandKmh) / 1.0), "feather");
+        }
+
+        if (errorKmh <= SpeedHoldFeatherWindowKmh)
+        {
+            return (Lerp(0.75, 0.875, (errorKmh - 2.0) / (SpeedHoldFeatherWindowKmh - 2.0)), "feather");
+        }
+
+        if (errorKmh <= SpeedHoldFullPowerErrorKmh)
+        {
+            return (Lerp(0.875, SpeedHoldPowerMax, (errorKmh - SpeedHoldFeatherWindowKmh) / (SpeedHoldFullPowerErrorKmh - SpeedHoldFeatherWindowKmh)), "power");
+        }
+
+        return (SpeedHoldPowerMax, "power");
+    }
+
+    private static double ApplyBrakeCurveTarget(double currentTargetKmh, double currentSpeedKmh, double requiredTargetKmh, double distanceMeters)
+    {
+        var curveTargetKmh = BrakeCurveTargetKmh(currentSpeedKmh, requiredTargetKmh, distanceMeters);
+        return Math.Min(currentTargetKmh, Math.Max(requiredTargetKmh, curveTargetKmh));
+    }
+
+    private static double ApplyStopSignalCurveTarget(double currentTargetKmh, double currentSpeedKmh, double distanceMeters)
+    {
+        var curveTargetKmh = BrakeCurveTargetKmh(currentSpeedKmh, 0, distanceMeters);
+        return Math.Min(currentTargetKmh, Math.Min(currentSpeedKmh, Math.Max(0, curveTargetKmh)));
+    }
+
+    private static double BrakeCurveTargetKmh(double currentSpeedKmh, double targetSpeedKmh, double distanceMeters)
     {
         var currentMps = Math.Max(0, currentSpeedKmh / 3.6);
         var targetMps = Math.Max(0, targetSpeedKmh / 3.6);
-        if (currentMps <= targetMps)
+        if (currentMps <= targetMps || distanceMeters <= AutoPilotBrakeMarginMeters)
         {
-            return AutoPilotBrakeMarginMeters;
+            return targetSpeedKmh;
         }
 
-        var brakingMeters = ((currentMps * currentMps) - (targetMps * targetMps))
-            / (2 * AutoPilotBrakeDecelMps2);
-        return brakingMeters + currentMps * AutoPilotReactionSeconds + AutoPilotBrakeMarginMeters;
+        var usableMeters = distanceMeters - (currentMps * AutoPilotReactionSeconds) - AutoPilotBrakeMarginMeters;
+        if (usableMeters <= 0)
+        {
+            return targetSpeedKmh;
+        }
+
+        var curveMps = Math.Sqrt((targetMps * targetMps) + (2 * AutoPilotBrakeDecelMps2 * usableMeters));
+        return Math.Max(targetSpeedKmh, curveMps * 3.6);
+    }
+
+    private static double Lerp(double start, double end, double amount)
+    {
+        return start + (end - start) * Math.Clamp(amount, 0, 1);
+    }
+
+    private static bool IsStopSignal(string? signalAspect)
+    {
+        return string.Equals(signalAspect, "Stop", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task SendSpeedHoldAxisAsync(double value)
@@ -1044,6 +1104,8 @@ internal sealed class BridgeService : IDisposable
         lastTelemetrySpeedKmh = speedKmh.Value;
         lastTelemetrySpeedLimit = speedLimit;
         lastTelemetryNextSpeedLimit = nextSpeedLimit;
+        lastTelemetrySignalAspect = driverAid?.SignalAspect;
+        lastTelemetrySignalDistanceMeters = driverAid?.SignalDistanceMeters;
         previousTelemetrySpeedKmh = speedKmh.Value;
         previousTelemetrySpeedLimit = nextSpeedLimit ?? speedLimit;
         await UpdateSpeedHoldAsync(speedKmh.Value);

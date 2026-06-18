@@ -160,3 +160,8 @@ adjust it:
 are saved as CSV files under `%APPDATA%\TrainDeck\runs\` and include speed,
 derived acceleration, current and next limits, signal/gradient data, cab handle
 state, brake/interlock hints, and TD Hold/Auto Pilot state.
+
+TD Hold and TD Auto Pilot use the first TrainDeck driver trace as a conservative
+assist profile: strong acceleration when there is room below the governing
+target, staged feathering near the limit, and brake-curve targets for upcoming
+lower limits or stop signals instead of crawling early.
