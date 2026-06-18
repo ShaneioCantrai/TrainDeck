@@ -139,6 +139,16 @@
             { "controlName": "HazardLights", "value": 1, "releaseValue": 0, "holdMs": 120, "delayAfterMs": 40 }
           ]
         },
+        "tail_lights": {
+          "steps": [
+            { "controlName": "Taillights", "value": 1, "holdMs": 0, "delayAfterMs": 40, "cycleValues": [ 0, 1 ] }
+          ]
+        },
+        "marker_lights": {
+          "steps": [
+            { "controlName": "Taillights", "value": 1, "holdMs": 0, "delayAfterMs": 40, "cycleValues": [ 0, 1 ] }
+          ]
+        },
         "cab_light": {
           "steps": [
             { "controlName": "CabLight_L", "value": 1, "releaseValue": 0, "holdMs": 120, "delayAfterMs": 40 }
