@@ -98,6 +98,12 @@ internal sealed class TrainDeckBridgeMessage
     [JsonPropertyName("speedHoldMode")]
     public string SpeedHoldMode { get; set; } = "";
 
+    [JsonPropertyName("runRecording")]
+    public bool RunRecording { get; set; }
+
+    [JsonPropertyName("runRecordingElapsedSeconds")]
+    public double? RunRecordingElapsedSeconds { get; set; }
+
     [JsonPropertyName("at")]
     public long At { get; set; }
 }

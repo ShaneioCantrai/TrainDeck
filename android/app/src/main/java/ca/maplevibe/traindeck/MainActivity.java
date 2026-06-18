@@ -313,6 +313,8 @@ public class MainActivity extends Activity implements TrainDeckView.Callback {
             double speedHoldTargetKmh = message.optDouble("speedHoldTargetKmh", Double.NaN);
             double speedHoldOutput = message.optDouble("speedHoldOutput", Double.NaN);
             String speedHoldMode = message.optString("speedHoldMode", "off");
+            boolean runRecording = message.optBoolean("runRecording", false);
+            double runRecordingElapsedSeconds = message.optDouble("runRecordingElapsedSeconds", Double.NaN);
             if (!Double.isNaN(speedKmh)) {
                 runOnUiThread(() -> deckView.setTelemetry(
                         (float) speedKmh,
@@ -324,7 +326,9 @@ public class MainActivity extends Activity implements TrainDeckView.Callback {
                         speedHoldAutoPilot,
                         Double.isNaN(speedHoldTargetKmh) ? Float.NaN : (float) speedHoldTargetKmh,
                         Double.isNaN(speedHoldOutput) ? Float.NaN : (float) speedHoldOutput,
-                        speedHoldMode));
+                        speedHoldMode,
+                        runRecording,
+                        Double.isNaN(runRecordingElapsedSeconds) ? Float.NaN : (float) runRecordingElapsedSeconds));
             }
         }
     }

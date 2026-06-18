@@ -87,6 +87,7 @@ public final class TrainDeckView extends View {
     private final RectF speedHoldMinus1Rect = new RectF();
     private final RectF speedHoldPlus1Rect = new RectF();
     private final RectF speedHoldPlus5Rect = new RectF();
+    private final RectF runRecordRect = new RectF();
     private final RectF[] walkButtonRects = new RectF[12];
     private final RectF[] pageRects = new RectF[4];
     private final RectF[] buttonRects = new RectF[24];
@@ -156,6 +157,8 @@ public final class TrainDeckView extends View {
     private float speedHoldTargetKmh = Float.NaN;
     private float speedHoldOutput = Float.NaN;
     private String speedHoldMode = "off";
+    private boolean runRecording = false;
+    private float runRecordingElapsedSeconds = Float.NaN;
     private long speedUpdatedAt = 0L;
 
     public TrainDeckView(Context context) {
@@ -203,13 +206,14 @@ public final class TrainDeckView extends View {
     }
 
     public void setSpeedKmh(float value) {
-        setTelemetry(value, Float.NaN, Float.NaN, Float.NaN, Float.NaN, false, false, Float.NaN, Float.NaN, "off");
+        setTelemetry(value, Float.NaN, Float.NaN, Float.NaN, Float.NaN, false, false, Float.NaN, Float.NaN, "off", false, Float.NaN);
     }
 
     public void setTelemetry(float currentSpeedKmh,
                              float currentSpeedLimitKmh, float currentSpeedLimitDistanceM,
                              float upcomingSpeedLimitKmh, float upcomingSpeedLimitDistanceM,
-                             boolean holdArmed, boolean holdAutoPilot, float holdTargetKmh, float holdOutput, String holdMode) {
+                             boolean holdArmed, boolean holdAutoPilot, float holdTargetKmh, float holdOutput, String holdMode,
+                             boolean recordingRun, float recordingElapsedSeconds) {
         speedKmh = currentSpeedKmh;
         speedLimitKmh = currentSpeedLimitKmh;
         speedLimitDistanceM = currentSpeedLimitDistanceM;
@@ -220,6 +224,8 @@ public final class TrainDeckView extends View {
         speedHoldTargetKmh = holdTargetKmh;
         speedHoldOutput = holdOutput;
         speedHoldMode = holdMode == null || holdMode.trim().isEmpty() ? "off" : holdMode;
+        runRecording = recordingRun;
+        runRecordingElapsedSeconds = recordingElapsedSeconds;
         speedUpdatedAt = System.currentTimeMillis();
         invalidate();
     }
@@ -1178,6 +1184,7 @@ public final class TrainDeckView extends View {
         speedHoldShortcutRect.setEmpty();
         speedHoldAutoPilotRect.setEmpty();
         speedHoldLimitRect.setEmpty();
+        runRecordRect.setEmpty();
 
         boolean fresh = !Float.isNaN(speedKmh) && System.currentTimeMillis() - speedUpdatedAt <= 2500L;
         float margin = dp(22);
@@ -1247,6 +1254,8 @@ public final class TrainDeckView extends View {
         speedHoldMinus1Rect.set(speedHoldMinus5Rect.right + colGap, row2Top, speedHoldMinus5Rect.right + colGap + colW, row2Top + rowH);
         speedHoldPlus1Rect.set(speedHoldMinus1Rect.right + colGap, row2Top, speedHoldMinus1Rect.right + colGap + colW, row2Top + rowH);
         speedHoldPlus5Rect.set(speedHoldPlus1Rect.right + colGap, row2Top, w - margin, row2Top + rowH);
+        float row3Top = row2Top + rowH + rowGap;
+        runRecordRect.set(margin, row3Top, w - margin, row3Top + rowH);
 
         drawAssistButton(canvas, speedHoldToggleRect, speedHoldArmed ? "DISARM" : "ARM", speedHoldArmed, fresh);
         drawAssistButton(canvas, speedHoldCurrentRect, "SET CURRENT", false, fresh);
@@ -1256,6 +1265,9 @@ public final class TrainDeckView extends View {
         drawAssistButton(canvas, speedHoldMinus1Rect, "-1", false, true);
         drawAssistButton(canvas, speedHoldPlus1Rect, "+1", false, true);
         drawAssistButton(canvas, speedHoldPlus5Rect, "+5", false, true);
+        drawAssistButton(canvas, runRecordRect,
+                runRecording ? "STOP\nRECORDING " + formatElapsed(runRecordingElapsedSeconds) : "START\nRUN RECORDING",
+                runRecording, fresh);
 
         paint.setTextAlign(Paint.Align.LEFT);
     }
@@ -1334,6 +1346,15 @@ public final class TrainDeckView extends View {
         }
 
         return "COAST";
+    }
+
+    private static String formatElapsed(float seconds) {
+        if (Float.isNaN(seconds) || seconds < 0f) {
+            return "";
+        }
+
+        int total = Math.max(0, Math.round(seconds));
+        return String.format(Locale.US, "%02d:%02d", total / 60, total % 60);
     }
 
     private void drawButton(Canvas canvas, RectF r, DeckProfile.ButtonDef def, boolean active) {
@@ -1803,6 +1824,11 @@ public final class TrainDeckView extends View {
 
         if (speedHoldPlus5Rect.contains(x, y)) {
             sendAssistButton("+5", "td_speed_hold_plus_5");
+            return true;
+        }
+
+        if (runRecordRect.contains(x, y)) {
+            sendAssistButton(runRecording ? "Stop Recording" : "Start Recording", "td_run_record_toggle");
             return true;
         }
 

@@ -191,7 +191,7 @@ internal sealed class TswHttpApiClient : IDisposable
         return speedMs is null ? null : Math.Abs(speedMs.Value) * 3.6;
     }
 
-    public async Task<TswSpeedLimitsTelemetry?> TryGetSpeedLimitsTelemetryAsync(CancellationToken token)
+    public async Task<TswDriverAidTelemetry?> TryGetDriverAidTelemetryAsync(CancellationToken token)
     {
         if (!IsReady || string.IsNullOrWhiteSpace(apiKey))
         {
@@ -228,14 +228,30 @@ internal sealed class TswHttpApiClient : IDisposable
                 TryReadSpeedLimitValue(values, "nextSpeedLimit"),
                 TryReadDouble(values, "distanceToNextSpeedLimit"));
 
-            return currentLimit is null && nextLimit is null
+            var gradient = TryReadDouble(values, "gradient");
+            var signalAspect = values.TryGetProperty("signalAspectClass", out var signal)
+                ? signal.GetString()
+                : null;
+            double? distanceToSignalM = TryReadDouble(values, "distanceToSignal") is { } signalDistanceCm
+                ? signalDistanceCm / 100.0
+                : null;
+
+            return currentLimit is null && nextLimit is null && gradient is null && signalAspect is null
                 ? null
-                : new TswSpeedLimitsTelemetry(currentLimit, nextLimit);
+                : new TswDriverAidTelemetry(currentLimit, nextLimit, gradient, signalAspect, distanceToSignalM);
         }
         catch
         {
             return null;
         }
+    }
+
+    public async Task<TswSpeedLimitsTelemetry?> TryGetSpeedLimitsTelemetryAsync(CancellationToken token)
+    {
+        var driverAid = await TryGetDriverAidTelemetryAsync(token);
+        return driverAid is null
+            ? null
+            : new TswSpeedLimitsTelemetry(driverAid.Current, driverAid.Next);
     }
 
     public async Task<TswSpeedLimitTelemetry?> TryGetSpeedLimitTelemetryAsync(CancellationToken token)
@@ -252,6 +268,44 @@ internal sealed class TswHttpApiClient : IDisposable
         }
 
         return limits.Next;
+    }
+
+    public async Task<TswCabTraceTelemetry?> TryGetCabTraceTelemetryAsync(CancellationToken token)
+    {
+        if (!IsReady || string.IsNullOrWhiteSpace(apiKey))
+        {
+            return null;
+        }
+
+        try
+        {
+            async Task<double?> Input(string control)
+                => await TryGetDoubleValueAsync(
+                    $"/get/CurrentDrivableActor/{Uri.EscapeDataString(control)}.InputValue",
+                    "InputValue",
+                    token);
+
+            async Task<double?> Normalized(string control)
+                => await TryGetDoubleValueAsync(
+                    $"/get/CurrentDrivableActor/{Uri.EscapeDataString(control)}.Function.GetNormalisedInputValue",
+                    "ReturnValue",
+                    token);
+
+            return new TswCabTraceTelemetry(
+                PowerHandleInput: await Input("PowerHandle"),
+                PowerHandleNormalized: await Normalized("PowerHandle"),
+                Reverser: await Input("Reverser"),
+                EmergencyBrake: await Input("EmergencyBrake"),
+                Dra: await Input("DRA"),
+                BrakeHold: await Input("BrakeHold"),
+                DoorReleaseLeft: await Input("DoorRelease_L"),
+                DoorReleaseRight: await Input("DoorsRelease_R"),
+                TpwsBrakeDemand: await Input("TPWS_BrakeDemand"));
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static double NextCycleValue(IReadOnlyList<double> cycleValues, double? current)

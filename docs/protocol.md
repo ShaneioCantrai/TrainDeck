@@ -130,6 +130,8 @@ AFB controls.
   "speedHoldTargetKmh": 80.0,
   "speedHoldOutput": 0.58,
   "speedHoldMode": "power",
+  "runRecording": true,
+  "runRecordingElapsedSeconds": 34.5,
   "at": 17823499123
 }
 ```
@@ -152,3 +154,9 @@ adjust it:
 - `td_speed_hold_minus_1`
 - `td_speed_hold_plus_1`
 - `td_speed_hold_plus_5`
+- `td_run_record_toggle`
+
+`td_run_record_toggle` starts or stops a bridge-side driver trace. Recordings
+are saved as CSV files under `%APPDATA%\TrainDeck\runs\` and include speed,
+derived acceleration, current and next limits, signal/gradient data, cab handle
+state, brake/interlock hints, and TD Hold/Auto Pilot state.

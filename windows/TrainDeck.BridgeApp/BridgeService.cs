@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
+using System.Globalization;
 
 namespace TrainDeck.BridgeApp;
 
@@ -55,6 +56,11 @@ internal sealed class BridgeService : IDisposable
     private double? previousTelemetrySpeedKmh;
     private TswSpeedLimitTelemetry? previousTelemetrySpeedLimit;
     private DateTimeOffset lastScenarioResetDetectedAt = DateTimeOffset.MinValue;
+    private StreamWriter? runRecordingWriter;
+    private string? runRecordingPath;
+    private DateTimeOffset? runRecordingStartedAt;
+    private DateTimeOffset? runRecordingPreviousAt;
+    private double? runRecordingPreviousSpeedKmh;
     private CancellationTokenSource? pendingDeckNeutralizeCts;
     private CancellationTokenSource? cts;
     private UdpClient? udp;
@@ -129,6 +135,7 @@ internal sealed class BridgeService : IDisposable
         cts?.Dispose();
         cts = null;
         CancelDeckNeutralize();
+        StopRunRecording("bridge stopped");
         tswApi.Stop();
         lock (deckRemotesSync)
         {
@@ -243,6 +250,11 @@ internal sealed class BridgeService : IDisposable
         var state = message.State ?? "";
         var command = message.Command ?? "";
         var label = message.Label ?? command;
+
+        if (HandleRunRecorderButton(command, state))
+        {
+            return;
+        }
 
         if (HandleSpeedHoldButton(command, state))
         {
@@ -386,6 +398,91 @@ internal sealed class BridgeService : IDisposable
         }
 
         return true;
+    }
+
+    private bool HandleRunRecorderButton(string command, string state)
+    {
+        if (!string.Equals(command, "td_run_record_toggle", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!string.Equals(state, "down", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (runRecordingWriter is null)
+        {
+            StartRunRecording();
+        }
+        else
+        {
+            StopRunRecording("tablet");
+        }
+
+        return true;
+    }
+
+    private void StartRunRecording()
+    {
+        var runDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "TrainDeck",
+            "runs");
+        Directory.CreateDirectory(runDir);
+
+        runRecordingPath = Path.Combine(runDir, $"traindeck-run-{DateTime.Now:yyyyMMdd-HHmmss}.csv");
+        runRecordingWriter = new StreamWriter(runRecordingPath, append: false, Encoding.UTF8);
+        runRecordingStartedAt = DateTimeOffset.UtcNow;
+        runRecordingPreviousAt = null;
+        runRecordingPreviousSpeedKmh = null;
+        runRecordingWriter.WriteLine(string.Join(",",
+        [
+            "timestampUtc",
+            "elapsedSeconds",
+            "speedKmh",
+            "accelerationMps2",
+            "speedLimitKmh",
+            "nextSpeedLimitKmh",
+            "nextSpeedLimitDistanceM",
+            "gradient",
+            "signalAspect",
+            "signalDistanceM",
+            "powerHandleInput",
+            "powerHandleNormalized",
+            "reverser",
+            "emergencyBrake",
+            "dra",
+            "brakeHold",
+            "doorReleaseLeft",
+            "doorReleaseRight",
+            "tpwsBrakeDemand",
+            "tdHoldArmed",
+            "tdAutoPilot",
+            "tdTargetKmh",
+            "tdOutput",
+            "tdMode"
+        ]));
+        runRecordingWriter.Flush();
+        LogInfo($"Run recording started: {runRecordingPath}");
+    }
+
+    private void StopRunRecording(string reason)
+    {
+        if (runRecordingWriter is null)
+        {
+            return;
+        }
+
+        var path = runRecordingPath;
+        runRecordingWriter.Dispose();
+        runRecordingWriter = null;
+        runRecordingPath = null;
+        runRecordingStartedAt = null;
+        runRecordingPreviousAt = null;
+        runRecordingPreviousSpeedKmh = null;
+        LogInfo($"Run recording stopped ({reason}): {path}");
     }
 
     private void ArmSpeedHold(double targetKmh, string reason)
@@ -940,9 +1037,9 @@ internal sealed class BridgeService : IDisposable
             return;
         }
 
-        var speedLimits = await tswApi.TryGetSpeedLimitsTelemetryAsync(token);
-        var speedLimit = speedLimits?.Current;
-        var nextSpeedLimit = speedLimits?.Next;
+        var driverAid = await tswApi.TryGetDriverAidTelemetryAsync(token);
+        var speedLimit = driverAid?.Current;
+        var nextSpeedLimit = driverAid?.Next;
         await DetectScenarioRestartAsync(speedKmh.Value, nextSpeedLimit ?? speedLimit);
         lastTelemetrySpeedKmh = speedKmh.Value;
         lastTelemetrySpeedLimit = speedLimit;
@@ -950,6 +1047,7 @@ internal sealed class BridgeService : IDisposable
         previousTelemetrySpeedKmh = speedKmh.Value;
         previousTelemetrySpeedLimit = nextSpeedLimit ?? speedLimit;
         await UpdateSpeedHoldAsync(speedKmh.Value);
+        await WriteRunRecordingSampleAsync(DateTimeOffset.UtcNow, speedKmh.Value, driverAid, token);
         var payload = new TrainDeckBridgeMessage
         {
             Type = "telemetry",
@@ -964,6 +1062,10 @@ internal sealed class BridgeService : IDisposable
             SpeedHoldTargetKmh = speedHoldArmed ? speedHoldTargetKmh : null,
             SpeedHoldOutput = speedHoldArmed ? speedHoldOutput : null,
             SpeedHoldMode = speedHoldMode,
+            RunRecording = runRecordingWriter is not null,
+            RunRecordingElapsedSeconds = runRecordingStartedAt is { } startedAt
+                ? (DateTimeOffset.UtcNow - startedAt).TotalSeconds
+                : null,
             At = Environment.TickCount64
         };
 
@@ -978,6 +1080,80 @@ internal sealed class BridgeService : IDisposable
         catch
         {
         }
+    }
+
+    private async Task WriteRunRecordingSampleAsync(
+        DateTimeOffset at,
+        double speedKmh,
+        TswDriverAidTelemetry? driverAid,
+        CancellationToken token)
+    {
+        if (runRecordingWriter is null || runRecordingStartedAt is not { } startedAt)
+        {
+            return;
+        }
+
+        var cab = await tswApi.TryGetCabTraceTelemetryAsync(token);
+        var elapsed = (at - startedAt).TotalSeconds;
+        double? accelerationMps2 = null;
+        if (runRecordingPreviousAt is { } previousAt
+            && runRecordingPreviousSpeedKmh is { } previousSpeed
+            && (at - previousAt).TotalSeconds > 0)
+        {
+            accelerationMps2 = ((speedKmh - previousSpeed) / 3.6) / (at - previousAt).TotalSeconds;
+        }
+
+        runRecordingPreviousAt = at;
+        runRecordingPreviousSpeedKmh = speedKmh;
+
+        runRecordingWriter.WriteLine(CsvRow(
+            at.ToString("O", CultureInfo.InvariantCulture),
+            elapsed,
+            speedKmh,
+            accelerationMps2,
+            driverAid?.Current?.NextSpeedLimitKmh,
+            driverAid?.Next?.NextSpeedLimitKmh,
+            driverAid?.Next?.DistanceMeters,
+            driverAid?.Gradient,
+            driverAid?.SignalAspect,
+            driverAid?.SignalDistanceMeters,
+            cab?.PowerHandleInput,
+            cab?.PowerHandleNormalized,
+            cab?.Reverser,
+            cab?.EmergencyBrake,
+            cab?.Dra,
+            cab?.BrakeHold,
+            cab?.DoorReleaseLeft,
+            cab?.DoorReleaseRight,
+            cab?.TpwsBrakeDemand,
+            speedHoldArmed,
+            speedHoldAutoPilot,
+            speedHoldArmed ? speedHoldTargetKmh : null,
+            speedHoldArmed ? speedHoldOutput : null,
+            speedHoldMode));
+        await runRecordingWriter.FlushAsync(token);
+    }
+
+    private static string CsvRow(params object?[] values)
+        => string.Join(",", values.Select(CsvValue));
+
+    private static string CsvValue(object? value)
+    {
+        return value switch
+        {
+            null => "",
+            double d when double.IsFinite(d) => d.ToString("0.###", CultureInfo.InvariantCulture),
+            float f when float.IsFinite(f) => f.ToString("0.###", CultureInfo.InvariantCulture),
+            bool b => b ? "true" : "false",
+            _ => QuoteCsv(value.ToString() ?? "")
+        };
+    }
+
+    private static string QuoteCsv(string value)
+    {
+        return value.IndexOfAny([',', '"', '\r', '\n']) < 0
+            ? value
+            : $"\"{value.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
     }
 
     private async Task DetectScenarioRestartAsync(double speedKmh, TswSpeedLimitTelemetry? speedLimit)
@@ -1085,7 +1261,8 @@ internal sealed class BridgeService : IDisposable
                 "td_speed_hold_minus_5",
                 "td_speed_hold_minus_1",
                 "td_speed_hold_plus_1",
-                "td_speed_hold_plus_5"
+                "td_speed_hold_plus_5",
+                "td_run_record_toggle"
             ])
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -1117,4 +1294,20 @@ internal sealed record BridgeStatusEventArgs(bool Running, int Port, IPEndPoint?
 internal sealed record AxisLog(double Value, DateTimeOffset At);
 internal sealed record PairedCommand(string ToggleCommand, string PrimaryCommand, string AlternateCommand);
 internal sealed record TswSpeedLimitsTelemetry(TswSpeedLimitTelemetry? Current, TswSpeedLimitTelemetry? Next);
+internal sealed record TswDriverAidTelemetry(
+    TswSpeedLimitTelemetry? Current,
+    TswSpeedLimitTelemetry? Next,
+    double? Gradient,
+    string? SignalAspect,
+    double? SignalDistanceMeters);
 internal sealed record TswSpeedLimitTelemetry(double NextSpeedLimitKmh, double DistanceMeters);
+internal sealed record TswCabTraceTelemetry(
+    double? PowerHandleInput,
+    double? PowerHandleNormalized,
+    double? Reverser,
+    double? EmergencyBrake,
+    double? Dra,
+    double? BrakeHold,
+    double? DoorReleaseLeft,
+    double? DoorReleaseRight,
+    double? TpwsBrakeDemand);
