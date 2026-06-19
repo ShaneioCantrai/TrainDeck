@@ -22,10 +22,15 @@ internal sealed class MainForm : Form
     private readonly Button setTswApiOptionButton = new();
     private readonly Button probeApiButton = new();
     private readonly Button snapshotCabButton = new();
+    private readonly Button runRecorderButton = new();
+    private readonly Button openRunsButton = new();
     private readonly Button openProfileButton = new();
     private readonly Button toggleLogButton = new();
     private readonly TextBox logBox = new();
+    private readonly NotifyIcon trayIcon = new();
+    private readonly ContextMenuStrip trayMenu = new();
     private bool logVisible;
+    private bool minimizeHintShown;
     private readonly string logPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "TrainDeck",
@@ -34,9 +39,11 @@ internal sealed class MainForm : Form
     public MainForm()
     {
         Text = "TrainDeck Bridge";
+        ShowInTaskbar = true;
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(760, 520);
         Size = new Size(1100, 680);
+        Icon = SystemIcons.Application;
         BackColor = Color.FromArgb(16, 20, 24);
         ForeColor = Color.FromArgb(232, 236, 239);
         Font = new Font("Segoe UI", 10F);
@@ -46,8 +53,10 @@ internal sealed class MainForm : Form
         bridge.Log += OnBridgeLog;
         bridge.StatusChanged += OnBridgeStatusChanged;
         bridge.ApiStatusChanged += OnApiStatusChanged;
+        bridge.RunRecordingStatusChanged += OnRunRecordingStatusChanged;
 
         BuildUi();
+        BuildTrayIcon();
     }
 
     protected override async void OnShown(EventArgs e)
@@ -59,8 +68,72 @@ internal sealed class MainForm : Form
 
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
+        trayIcon.Visible = false;
+        trayIcon.Dispose();
+        trayMenu.Dispose();
         bridge.Dispose();
         base.OnFormClosed(e);
+    }
+
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+
+        if (WindowState != FormWindowState.Minimized)
+        {
+            return;
+        }
+
+        ShowInTaskbar = true;
+        if (minimizeHintShown)
+        {
+            return;
+        }
+
+        minimizeHintShown = true;
+        trayIcon.BalloonTipTitle = "TrainDeck Bridge is still running";
+        trayIcon.BalloonTipText = "Use the taskbar button or double-click the tray icon to bring it back.";
+        trayIcon.ShowBalloonTip(2500);
+    }
+
+    private void BuildTrayIcon()
+    {
+        var restoreItem = new ToolStripMenuItem("Restore TrainDeck Bridge");
+        restoreItem.Click += (_, _) => RestoreFromTray();
+
+        var exitItem = new ToolStripMenuItem("Exit");
+        exitItem.Click += (_, _) => Close();
+
+        trayMenu.Items.AddRange(new ToolStripItem[]
+        {
+            restoreItem,
+            new ToolStripSeparator(),
+            exitItem
+        });
+
+        trayIcon.Icon = Icon;
+        trayIcon.Text = "TrainDeck Bridge";
+        trayIcon.ContextMenuStrip = trayMenu;
+        trayIcon.Visible = true;
+        trayIcon.DoubleClick += (_, _) => RestoreFromTray();
+    }
+
+    private void RestoreFromTray()
+    {
+        if (InvokeRequired)
+        {
+            BeginInvoke(RestoreFromTray);
+            return;
+        }
+
+        Show();
+        ShowInTaskbar = true;
+        if (WindowState == FormWindowState.Minimized)
+        {
+            WindowState = FormWindowState.Normal;
+        }
+
+        Activate();
     }
 
     private void BuildUi()
@@ -333,6 +406,22 @@ internal sealed class MainForm : Form
         };
         buttonRow.Controls.Add(snapshotCabButton);
 
+        runRecorderButton.Text = "Start Recording";
+        runRecorderButton.Width = 140;
+        runRecorderButton.Height = 34;
+        runRecorderButton.Click += (_, _) =>
+        {
+            AppendLog(bridge.ToggleRunRecording("bridge"));
+            UpdateRunRecorderButton();
+        };
+        buttonRow.Controls.Add(runRecorderButton);
+
+        openRunsButton.Text = "Open Runs";
+        openRunsButton.Width = 105;
+        openRunsButton.Height = 34;
+        openRunsButton.Click += (_, _) => OpenRunsFolder();
+        buttonRow.Controls.Add(openRunsButton);
+
         openProfileButton.Text = "Open Key Profile";
         openProfileButton.Width = 150;
         openProfileButton.Height = 34;
@@ -434,6 +523,31 @@ internal sealed class MainForm : Form
         launchTswApiButton.Text = e.Ready ? "Launch TSW" : "Launch TSW API";
     }
 
+    private void OnRunRecordingStatusChanged(object? sender, RunRecordingStatusEventArgs e)
+    {
+        if (InvokeRequired)
+        {
+            BeginInvoke(() => OnRunRecordingStatusChanged(sender, e));
+            return;
+        }
+
+        UpdateRunRecorderButton(e);
+    }
+
+    private void UpdateRunRecorderButton(RunRecordingStatusEventArgs? status = null)
+    {
+        var recording = status?.Recording ?? bridge.IsRunRecording;
+        if (!recording)
+        {
+            runRecorderButton.Text = "Start Recording";
+            return;
+        }
+
+        runRecorderButton.Text = status?.Elapsed is { } elapsed
+            ? $"Stop {elapsed:mm\\:ss}"
+            : "Stop Recording";
+    }
+
     private void AppendLog(string message)
     {
         if (InvokeRequired)
@@ -465,6 +579,20 @@ internal sealed class MainForm : Form
         Process.Start(new ProcessStartInfo
         {
             FileName = profile.Path,
+            UseShellExecute = true
+        });
+    }
+
+    private static void OpenRunsFolder()
+    {
+        var runDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "TrainDeck",
+            "runs");
+        Directory.CreateDirectory(runDir);
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = runDir,
             UseShellExecute = true
         });
     }

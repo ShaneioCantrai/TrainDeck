@@ -161,6 +161,10 @@ are saved as CSV files under `%APPDATA%\TrainDeck\runs\` and include speed,
 derived acceleration, current and next limits, signal/gradient data, cab handle
 state, brake/interlock hints, and TD Hold/Auto Pilot state.
 
+Use `.\scripts\analyze-run.ps1` from the repo root to summarize the latest trace
+for mapping and training review. Pass `-Path` to analyze a specific CSV and
+`-Json` when a downstream tool needs machine-readable output.
+
 TD Hold and TD Auto Pilot use the first TrainDeck driver trace as a conservative
 assist profile: strong acceleration when there is room below the governing
 target, staged feathering near the limit, and brake-curve targets for upcoming

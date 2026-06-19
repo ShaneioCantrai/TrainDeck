@@ -80,6 +80,7 @@ internal sealed class BridgeService : IDisposable
     public event EventHandler<BridgeLogEventArgs>? Log;
     public event EventHandler<BridgeStatusEventArgs>? StatusChanged;
     public event EventHandler<TswHttpApiStatusEventArgs>? ApiStatusChanged;
+    public event EventHandler<RunRecordingStatusEventArgs>? RunRecordingStatusChanged;
 
     private bool keyboardEnabled;
 
@@ -104,6 +105,8 @@ internal sealed class BridgeService : IDisposable
     public int Port { get; private set; }
     public IPEndPoint? LastRemote { get; private set; }
     public bool AutoArmTrainSimWorld { get; set; } = true;
+    public bool IsRunRecording => runRecordingWriter is not null;
+    public string? CurrentRunRecordingPath => runRecordingPath;
 
     public Task<string> ProbeApiAsync() => tswApi.ProbeNowAsync();
 
@@ -112,6 +115,19 @@ internal sealed class BridgeService : IDisposable
         var result = await tswApi.SnapshotCabAsync();
         await SendDeckCapabilitiesAsync();
         return result;
+    }
+
+    public string ToggleRunRecording(string reason)
+    {
+        if (runRecordingWriter is null)
+        {
+            StartRunRecording();
+            return $"Run recording started: {runRecordingPath}";
+        }
+
+        var path = runRecordingPath;
+        StopRunRecording(reason);
+        return $"Run recording stopped ({reason}): {path}";
     }
 
     public async Task StartAsync(int port)
@@ -416,14 +432,7 @@ internal sealed class BridgeService : IDisposable
             return true;
         }
 
-        if (runRecordingWriter is null)
-        {
-            StartRunRecording();
-        }
-        else
-        {
-            StopRunRecording("tablet");
-        }
+        ToggleRunRecording("tablet");
 
         return true;
     }
@@ -469,6 +478,7 @@ internal sealed class BridgeService : IDisposable
             "tdMode"
         ]));
         runRecordingWriter.Flush();
+        RunRecordingStatusChanged?.Invoke(this, new RunRecordingStatusEventArgs(true, runRecordingPath, TimeSpan.Zero));
         LogInfo($"Run recording started: {runRecordingPath}");
     }
 
@@ -486,6 +496,7 @@ internal sealed class BridgeService : IDisposable
         runRecordingStartedAt = null;
         runRecordingPreviousAt = null;
         runRecordingPreviousSpeedKmh = null;
+        RunRecordingStatusChanged?.Invoke(this, new RunRecordingStatusEventArgs(false, path, null));
         LogInfo($"Run recording stopped ({reason}): {path}");
     }
 
@@ -1110,6 +1121,9 @@ internal sealed class BridgeService : IDisposable
         previousTelemetrySpeedLimit = nextSpeedLimit ?? speedLimit;
         await UpdateSpeedHoldAsync(speedKmh.Value);
         await WriteRunRecordingSampleAsync(DateTimeOffset.UtcNow, speedKmh.Value, driverAid, token);
+        var recordingElapsed = runRecordingStartedAt is { } startedAt
+            ? DateTimeOffset.UtcNow - startedAt
+            : (TimeSpan?)null;
         var payload = new TrainDeckBridgeMessage
         {
             Type = "telemetry",
@@ -1125,11 +1139,13 @@ internal sealed class BridgeService : IDisposable
             SpeedHoldOutput = speedHoldArmed ? speedHoldOutput : null,
             SpeedHoldMode = speedHoldMode,
             RunRecording = runRecordingWriter is not null,
-            RunRecordingElapsedSeconds = runRecordingStartedAt is { } startedAt
-                ? (DateTimeOffset.UtcNow - startedAt).TotalSeconds
-                : null,
+            RunRecordingElapsedSeconds = recordingElapsed?.TotalSeconds,
             At = Environment.TickCount64
         };
+        if (runRecordingWriter is not null)
+        {
+            RunRecordingStatusChanged?.Invoke(this, new RunRecordingStatusEventArgs(true, runRecordingPath, recordingElapsed));
+        }
 
         try
         {
@@ -1353,6 +1369,7 @@ internal sealed class BridgeService : IDisposable
 
 internal sealed record BridgeLogEventArgs(string Level, string Message);
 internal sealed record BridgeStatusEventArgs(bool Running, int Port, IPEndPoint? LastRemote);
+internal sealed record RunRecordingStatusEventArgs(bool Recording, string? Path, TimeSpan? Elapsed);
 internal sealed record AxisLog(double Value, DateTimeOffset At);
 internal sealed record PairedCommand(string ToggleCommand, string PrimaryCommand, string AlternateCommand);
 internal sealed record TswSpeedLimitsTelemetry(TswSpeedLimitTelemetry? Current, TswSpeedLimitTelemetry? Next);

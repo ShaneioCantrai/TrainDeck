@@ -983,11 +983,11 @@ public final class TrainDeckView extends View {
     private void drawAfbStepButtons(Canvas canvas, AxisControl axis, boolean unavailable) {
         RectF r = axis.rect;
         float buttonLeft = afbButtonLeft(axis);
-        float buttonRight = r.right - dp(24);
-        float buttonH = dp(60);
-        float buttonTop = r.top + dp(72);
+        float buttonRight = afbButtonRight(axis);
+        float buttonH = dp(44);
+        float buttonTop = r.top + dp(78);
         axis.afbPlusRect.set(buttonLeft, buttonTop, buttonRight, buttonTop + buttonH);
-        axis.afbMinusRect.set(buttonLeft, axis.afbPlusRect.bottom + dp(26), buttonRight, axis.afbPlusRect.bottom + dp(26) + buttonH);
+        axis.afbMinusRect.set(buttonLeft, axis.afbPlusRect.bottom + dp(16), buttonRight, axis.afbPlusRect.bottom + dp(16) + buttonH);
 
         drawAfbStepButton(canvas, axis.afbPlusRect, "+", unavailable || afbSpeedKmh(axis.value) >= AFB_MAX_SPEED_KMH);
         drawAfbStepButton(canvas, axis.afbMinusRect, "-", unavailable || afbSpeedKmh(axis.value) <= 0f);
@@ -2156,7 +2156,12 @@ public final class TrainDeckView extends View {
     }
 
     private float afbButtonLeft(AxisControl axis) {
-        return axis.rect.right - dp(100);
+        float buttonW = Math.min(dp(54), Math.max(dp(44), axis.rect.width() * 0.24f));
+        return afbButtonRight(axis) - buttonW;
+    }
+
+    private float afbButtonRight(AxisControl axis) {
+        return axis.rect.right - dp(18);
     }
 
     private void handleStepAxisTouch(AxisControl axis, float x, float y) {

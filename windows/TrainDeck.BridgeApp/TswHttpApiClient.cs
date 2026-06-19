@@ -1123,31 +1123,22 @@ internal sealed class TswHttpApiProfileCatalog
             ?? controls.FirstOrDefault(control =>
                 control.Name.Contains("PowerHandle", StringComparison.OrdinalIgnoreCase)
                 || control.Name.Contains("MasterController", StringComparison.OrdinalIgnoreCase)
+                || control.Name.Contains("ThrottleBrake", StringComparison.OrdinalIgnoreCase)
+                || control.Name.Contains("ThrottleAndBrake", StringComparison.OrdinalIgnoreCase)
                 || control.Name.Contains("TractionBrake", StringComparison.OrdinalIgnoreCase)
                 || control.Name.Contains("Throttle", StringComparison.OrdinalIgnoreCase));
         if (!profile.Axes.ContainsKey("throttle") && throttle is not null)
         {
+            var combinedThrottleBrake = IsCombinedThrottleBrakeControl(throttle.Name);
             mapped += SetAxis(profile, "throttle", new TswHttpApiAxisBinding
             {
                 ControlName = throttle.Name,
                 SourceMin = 0,
                 SourceMax = 1,
-                TargetMin = throttle.Name.Contains("Power", StringComparison.OrdinalIgnoreCase)
-                    || throttle.Name.Contains("TractionBrake", StringComparison.OrdinalIgnoreCase)
-                    || throttle.Name.Contains("MasterController", StringComparison.OrdinalIgnoreCase)
-                        ? -1
-                        : 0,
+                TargetMin = combinedThrottleBrake ? -1 : 0,
                 TargetMax = 1,
-                SourceNeutral = throttle.Name.Contains("Power", StringComparison.OrdinalIgnoreCase)
-                    || throttle.Name.Contains("TractionBrake", StringComparison.OrdinalIgnoreCase)
-                    || throttle.Name.Contains("MasterController", StringComparison.OrdinalIgnoreCase)
-                        ? 0.5
-                        : null,
-                TargetNeutral = throttle.Name.Contains("Power", StringComparison.OrdinalIgnoreCase)
-                    || throttle.Name.Contains("TractionBrake", StringComparison.OrdinalIgnoreCase)
-                    || throttle.Name.Contains("MasterController", StringComparison.OrdinalIgnoreCase)
-                        ? 0
-                        : null
+                SourceNeutral = combinedThrottleBrake ? 0.5 : null,
+                TargetNeutral = combinedThrottleBrake ? 0 : null
             });
         }
 
@@ -1286,6 +1277,15 @@ internal sealed class TswHttpApiProfileCatalog
             ?? controls.FirstOrDefault(control => IsWiperCycleControl(control.Name));
     }
 
+    private static bool IsCombinedThrottleBrakeControl(string name)
+    {
+        return name.Contains("Power", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("TractionBrake", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("ThrottleBrake", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("ThrottleAndBrake", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("MasterController", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static bool IsWiperCycleControl(string name)
     {
         return name.Contains("WiperControls", StringComparison.OrdinalIgnoreCase)
@@ -1329,8 +1329,20 @@ internal sealed class TswHttpApiProfileCatalog
         var actionText = release ? "Open" : "Close";
         return controls.FirstOrDefault(control =>
             control.Name.Contains("PassengerDoor", StringComparison.OrdinalIgnoreCase)
-            && control.Name.Contains(actionText, StringComparison.OrdinalIgnoreCase)
-            && control.Name.EndsWith($"_{side}", StringComparison.OrdinalIgnoreCase))?.Name;
+            && MatchesDoorAction(control.Name, actionText, release)
+            && MatchesDoorSide(control.Name, side))?.Name;
+    }
+
+    private static bool MatchesDoorAction(string name, string actionText, bool release)
+    {
+        return name.Contains(actionText, StringComparison.OrdinalIgnoreCase)
+            || (release && name.Contains("Release", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool MatchesDoorSide(string name, string side)
+    {
+        return name.EndsWith($"_{side}", StringComparison.OrdinalIgnoreCase)
+            || name.EndsWith(side, StringComparison.OrdinalIgnoreCase);
     }
 
     private static int SetMomentary(TswHttpApiProfile profile, string command, string? controlName, int holdMs)

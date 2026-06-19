@@ -33,6 +33,7 @@ Keyboard output remains as a fallback for mapped buttons and for sessions where 
 - Hold-to-enter emergency brake gate on the combined throttle.
 - TSW API launch-option helper for Steam installs.
 - Cab snapshot tool for discovering loaded train controls.
+- Run recorder for driving traces that can be analyzed for mapping and assist tuning.
 - Editable button labels and command IDs on the tablet.
 - JSON keyboard profile on Windows.
 
@@ -133,6 +134,31 @@ The release package includes:
 TrainDeck Bridge can add `-HTTPAPI` to the Steam launch options for Train Sim World 6. TSW must be restarted after this option is set.
 
 The bridge creates or reads `CommAPIKey.txt` under the user's `Documents\My Games\TrainSimWorld*` config folder and sends the `DTGCommKey` header required by the TSW API.
+
+## Run Recorder
+
+When the bridge is connected to the TSW HTTP API, the tablet assist panel shows
+`START RUN RECORDING`. You can also press `Start Recording` in the Windows
+bridge. Start recording before driving a scenario segment, then stop it when
+done. The bridge writes CSV traces under:
+
+```text
+%APPDATA%\TrainDeck\runs\
+```
+
+The trace includes speed, derived acceleration, current and next speed limits,
+signal/gradient hints, cab handle state, brake/interlock hints, and TrainDeck
+assist state. To summarize the latest run for mapping and training review:
+
+```powershell
+.\scripts\analyze-run.ps1
+```
+
+To analyze a specific trace:
+
+```powershell
+.\scripts\analyze-run.ps1 -Path "$env:APPDATA\TrainDeck\runs\traindeck-run-YYYYMMDD-HHMMSS.csv"
+```
 
 ## Profiles
 
